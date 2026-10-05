@@ -119,6 +119,13 @@ dist
 # Firebase cache directory
 .firebase/
 
+# Firebase local emulator data
+firebase-debug.log
+
+# Local environment files
+.env.local
+*-firebase-adminsdk-*.json
+
 # TernJS port file
 .tern-port
 

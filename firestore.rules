@@ -1,0 +1,69 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function role() {
+      return signedIn() && request.auth.token.role != null
+        ? request.auth.token.role
+        : null;
+    }
+
+    function isAdmin() { return role() == 'ADMIN'; }
+    function isSupervisor() { return role() == 'SUPERVISOR'; }
+    function isAgent() { return role() == 'AGENTE'; }
+    function isStaff() { return isAdmin() || isSupervisor(); }
+    function hasKeys(keys) {
+      return request.resource.data.keys().hasOnly(keys);
+    }
+    function owns(data) {
+      return data.inmobiliarioId == request.auth.uid
+        || data.responsibleId == request.auth.uid
+        || data.userId == request.auth.uid;
+    }
+
+    match /inmobiliarios/{id} {
+      allow read: if signedIn() && (isAdmin() || isSupervisor());
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /propiedades/{id} {
+      allow read: if signedIn() && (isStaff() || (isAgent() && (resource.data.inmobiliarioId == request.auth.uid || resource.data.status == 'Activa')));
+      allow create: if isStaff() || (isAgent() && request.resource.data.inmobiliarioId == request.auth.uid);
+      allow update: if isStaff() || (isAgent() && owns(resource.data) && request.resource.data.inmobiliarioId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    match /clientes/{id} {
+      allow read: if signedIn() && (isStaff() || (isAgent() && owns(resource.data)));
+      allow create: if isStaff() || (isAgent() && request.resource.data.inmobiliarioId == request.auth.uid);
+      allow update: if isStaff() || (isAgent() && owns(resource.data) && request.resource.data.inmobiliarioId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    match /eventos/{id} {
+      allow read: if signedIn() && (isStaff() || (isAgent() && owns(resource.data)));
+      allow create: if isStaff() || (isAgent() && request.resource.data.responsibleId == request.auth.uid);
+      allow update: if isStaff() || (isAgent() && owns(resource.data) && request.resource.data.responsibleId == request.auth.uid);
+      allow delete: if isAdmin() || (isSupervisor() && owns(resource.data));
+    }
+
+    match /actividad/{id} {
+      allow read: if signedIn() && (isStaff() || (isAgent() && owns(resource.data)));
+      allow create: if isStaff() || (isAgent() && request.resource.data.userId == request.auth.uid);
+      allow update: if isStaff() || (isAgent() && owns(resource.data));
+      allow delete: if isAdmin();
+    }
+
+    match /reportes/{id} {
+      allow read: if signedIn() && (isAdmin() || isSupervisor() || isAgent());
+      allow write: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
