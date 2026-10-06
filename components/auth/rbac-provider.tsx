@@ -20,7 +20,7 @@ export function RBACProvider({ children }: Readonly<{ children: React.ReactNode 
 
   useEffect(() => {
     if (!auth) {
-      setLoading(false);
+      queueMicrotask(() => setLoading(false));
       return;
     }
 
