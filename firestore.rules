@@ -25,12 +25,12 @@ service cloud.firestore {
     }
 
     match /inmobiliarios/{id} {
-      allow read: if signedIn() && (isAdmin() || isSupervisor());
+      allow read: if signedIn();
       allow create, update, delete: if isAdmin();
     }
 
     match /propiedades/{id} {
-      allow read: if signedIn() && (isStaff() || (isAgent() && (resource.data.inmobiliarioId == request.auth.uid || resource.data.status == 'Activa')));
+      allow read: if signedIn();
       allow create: if isStaff() || (isAgent() && request.resource.data.inmobiliarioId == request.auth.uid);
       allow update: if isStaff() || (isAgent() && owns(resource.data) && request.resource.data.inmobiliarioId == request.auth.uid);
       allow delete: if isAdmin();

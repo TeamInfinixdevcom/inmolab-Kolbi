@@ -21,6 +21,7 @@ import {
   collection,
   doc,
   getDocs,
+  onSnapshot,
   updateDoc,
 } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,8 @@ type Property = {
   inmobiliarioId: string;
   inmobiliarioName: string;
   description: string;
+  latitude: number;
+  longitude: number;
   createdAt?: string;
 };
 
@@ -66,6 +69,8 @@ const emptyForm: PropertyForm = {
   status: "Activa",
   inmobiliarioId: "",
   description: "",
+  latitude: 0,
+  longitude: 0,
 };
 
 const propertyCollection = "propiedades";
@@ -89,51 +94,56 @@ export default function PropiedadesPage() {
 
   useEffect(() => {
     let active = true;
+    let unsubscribeProperties: (() => void) | undefined;
+
     async function loadData() {
       if (!db) {
         setLoading(false);
         return;
       }
       try {
-        const [propertySnapshot, agentSnapshot] = await Promise.all([
-          getDocs(collection(db, propertyCollection)),
-          getDocs(collection(db, "inmobiliarios")),
-        ]);
+        const agentSnapshot = await getDocs(collection(db, "inmobiliarios"));
         const agents = agentSnapshot.docs.map((item) => ({ id: item.id, name: String(item.data().name ?? "") }));
-        const loaded = propertySnapshot.docs.map((item) => {
-          const data = item.data();
-          const inmobiliarioId = String(data.inmobiliarioId ?? "");
-          return {
-            id: item.id,
-            title: String(data.title ?? ""),
-            type: String(data.type ?? "Casa"),
-            operation: data.operation === "Alquiler" ? "Alquiler" : "Venta",
-            price: Number(data.price ?? 0),
-            city: String(data.city ?? ""),
-            address: String(data.address ?? ""),
-            bedrooms: Number(data.bedrooms ?? 0),
-            bathrooms: Number(data.bathrooms ?? 0),
-            area: Number(data.area ?? 0),
-            status: data.status === "Inactiva" ? "Inactiva" : "Activa",
-            inmobiliarioId,
-            inmobiliarioName: agents.find((agent) => agent.id === inmobiliarioId)?.name ?? String(data.inmobiliarioName ?? "Sin asignar"),
-            description: String(data.description ?? ""),
-            createdAt: String(data.createdAt ?? ""),
-          } as Property;
-        });
-        if (active) {
-          setInmobiliarios(agents);
+        if (!active) return;
+        setInmobiliarios(agents);
+        unsubscribeProperties = onSnapshot(collection(db, propertyCollection), (propertySnapshot) => {
+          const loaded = propertySnapshot.docs.map((item) => {
+            const data = item.data();
+            const inmobiliarioId = String(data.inmobiliarioId ?? "");
+            return {
+              id: item.id,
+              title: String(data.title ?? ""),
+              type: String(data.type ?? "Casa"),
+              operation: data.operation === "Alquiler" ? "Alquiler" : "Venta",
+              price: Number(data.price ?? 0),
+              city: String(data.city ?? ""),
+              address: String(data.address ?? ""),
+              bedrooms: Number(data.bedrooms ?? 0),
+              bathrooms: Number(data.bathrooms ?? 0),
+              area: Number(data.area ?? 0),
+              status: data.status === "Inactiva" ? "Inactiva" : "Activa",
+              inmobiliarioId,
+              inmobiliarioName: agents.find((agent) => agent.id === inmobiliarioId)?.name ?? String(data.inmobiliarioName ?? "Sin asignar"),
+              description: String(data.description ?? ""),
+              latitude: Number(data.latitude ?? 0),
+              longitude: Number(data.longitude ?? 0),
+              createdAt: String(data.createdAt ?? ""),
+            } as Property;
+          });
           setProperties(loaded);
-        }
+          setLoading(false);
+        }, (loadError) => {
+          console.error("No se pudieron cargar las propiedades.", loadError);
+          setError("No se pudieron cargar las propiedades. Revisa la configuración y las reglas de Firestore.");
+          setLoading(false);
+        });
       } catch (loadError) {
         console.error("No se pudieron cargar las propiedades.", loadError);
         if (active) setError("No se pudieron cargar las propiedades. Revisa la configuración y las reglas de Firestore.");
-      } finally {
-        if (active) setLoading(false);
       }
     }
     void loadData();
-    return () => { active = false; };
+    return () => { active = false; unsubscribeProperties?.(); };
   }, []);
 
   const filteredProperties = useMemo(() => properties.filter((property) => {
@@ -168,6 +178,8 @@ export default function PropiedadesPage() {
       status: property.status,
       inmobiliarioId: property.inmobiliarioId,
       description: property.description,
+      latitude: property.latitude,
+      longitude: property.longitude,
     });
     setSelected(null);
     setError("");
@@ -237,6 +249,8 @@ export default function PropiedadesPage() {
         <label className="text-sm font-medium">Área (m²)<input required min="1" type="number" value={form.area || ""} onChange={(event) => updateField("area", Number(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
         <label className="text-sm font-medium">Ciudad<input required value={form.city} onChange={(event) => updateField("city", event.target.value)} placeholder="San José" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
         <label className="text-sm font-medium lg:col-span-2">Dirección<input value={form.address} onChange={(event) => updateField("address", event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+        <label className="text-sm font-medium">Latitud<input type="number" step="any" min="8" max="12" value={form.latitude || ""} onChange={(event) => updateField("latitude", Number(event.target.value))} placeholder="9.9347" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+        <label className="text-sm font-medium">Longitud<input type="number" step="any" min="-86" max="-82" value={form.longitude || ""} onChange={(event) => updateField("longitude", Number(event.target.value))} placeholder="-84.0875" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
         <label className="text-sm font-medium">Inmobiliario<select value={form.inmobiliarioId} onChange={(event) => updateField("inmobiliarioId", event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary"><option value="">Sin asignar</option>{inmobiliarios.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select></label>
         <label className="text-sm font-medium">Habitaciones<input min="0" type="number" value={form.bedrooms} onChange={(event) => updateField("bedrooms", Number(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
         <label className="text-sm font-medium">Baños<input min="0" type="number" value={form.bathrooms} onChange={(event) => updateField("bathrooms", Number(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
