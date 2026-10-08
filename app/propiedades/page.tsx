@@ -43,6 +43,16 @@ type HistoryEntry = {
 type Property = {
   id: string;
   condominiumName: string;
+  region: string;
+  operationDate: string;
+  central: string;
+  adoDistrict: string;
+  type: string;
+  province: string;
+  canton: string;
+  district: string;
+  inmobiliarioCondition: string;
+  activeOperators: number;
   administrator: string;
   administratorEmail: string;
   activeServices: number;
@@ -80,6 +90,16 @@ type Inmobiliario = { id: string; name: string };
 
 const emptyForm: PropertyForm = {
   condominiumName: "",
+  region: "",
+  operationDate: "",
+  central: "",
+  adoDistrict: "",
+  type: "",
+  province: "",
+  canton: "",
+  district: "",
+  inmobiliarioCondition: "",
+  activeOperators: 0,
   administrator: "",
   administratorEmail: "",
   activeServices: 0,
@@ -95,6 +115,16 @@ const emptyForm: PropertyForm = {
 const propertyCollection = "propiedades";
 const fieldLabels: Record<keyof PropertyForm, string> = {
   condominiumName: "Nombre del condominio",
+  region: "Región",
+  operationDate: "Fecha de operación",
+  central: "Central",
+  adoDistrict: "ADO_Distrito",
+  type: "Tipo",
+  province: "Provincia",
+  canton: "Cantón",
+  district: "Distrito",
+  inmobiliarioCondition: "Estado/Condición Inmobiliario",
+  activeOperators: "Operadores activos",
   administrator: "Administrador",
   administratorEmail: "Correo del administrador",
   activeServices: "Servicios activos",
@@ -126,6 +156,16 @@ function mapProperty(id: string, data: Record<string, unknown>, agents: Inmobili
   return {
     id,
     condominiumName: text(data.condominiumName ?? data.title),
+    region: text(data.region),
+    operationDate: text(data.operationDate),
+    central: text(data.central),
+    adoDistrict: text(data.adoDistrict),
+    type: text(data.type),
+    province: text(data.province),
+    canton: text(data.canton),
+    district: text(data.district),
+    inmobiliarioCondition: text(data.inmobiliarioCondition),
+    activeOperators: number(data.activeOperators),
     administrator: text(data.administrator),
     administratorEmail: text(data.administratorEmail),
     activeServices: number(data.activeServices),
@@ -207,6 +247,12 @@ export default function PropiedadesPage() {
   const filteredProperties = useMemo(() => properties.filter((property) => {
     const haystack = [
       property.condominiumName,
+      property.region,
+      property.central,
+      property.adoDistrict,
+      property.province,
+      property.canton,
+      property.district,
       property.administrator,
       property.administratorEmail,
       property.nap,
@@ -222,7 +268,7 @@ export default function PropiedadesPage() {
 
   function openCreate() {
     setEditingId(null);
-    setForm(emptyForm);
+    setForm({ ...emptyForm, inmobiliarioId: user?.uid ?? "" });
     setSelected(null);
     setError("");
     setShowForm(true);
@@ -232,6 +278,16 @@ export default function PropiedadesPage() {
     setEditingId(property.id);
     setForm({
       condominiumName: property.condominiumName,
+      region: property.region,
+      operationDate: property.operationDate,
+      central: property.central,
+      adoDistrict: property.adoDistrict,
+      type: property.type,
+      province: property.province,
+      canton: property.canton,
+      district: property.district,
+      inmobiliarioCondition: property.inmobiliarioCondition,
+      activeOperators: property.activeOperators,
       administrator: property.administrator,
       administratorEmail: property.administratorEmail,
       activeServices: property.activeServices,
@@ -271,6 +327,7 @@ export default function PropiedadesPage() {
     setError("");
     const agent = inmobiliarios.find((item) => item.id === form.inmobiliarioId);
     const currentActor = actor();
+    const previous = editingId ? properties.find((property) => property.id === editingId) : undefined;
     const payload = {
       ...form,
       condominiumName: form.condominiumName.trim(),
@@ -278,7 +335,8 @@ export default function PropiedadesPage() {
       administratorEmail: form.administratorEmail.trim(),
       registrationNote: form.registrationNote.trim(),
       observations: form.observations.trim(),
-      inmobiliarioName: agent?.name ?? "Sin asignar",
+      inmobiliarioId: editingId ? form.inmobiliarioId : currentActor.userId,
+      inmobiliarioName: editingId ? (agent?.name ?? previous?.inmobiliarioName ?? currentActor.user) : currentActor.user,
       updatedAt: currentActor.date,
       updatedBy: currentActor.user,
       updatedById: currentActor.userId,
@@ -286,7 +344,6 @@ export default function PropiedadesPage() {
 
     try {
       if (editingId) {
-        const previous = properties.find((property) => property.id === editingId);
         if (!previous) throw new Error("No se encontró el condominio que se quiere actualizar.");
         const changes = changedFields(previous, form);
         const entry: HistoryEntry = {
@@ -374,13 +431,23 @@ export default function PropiedadesPage() {
           <CardContent>
             <form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <label className="text-sm font-medium lg:col-span-2">Nombre del condominio<input required value={form.condominiumName} onChange={(event) => updateField("condominiumName", event.target.value)} placeholder="Condominio Las Flores" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <label className="text-sm font-medium">Región<input value={form.region} onChange={(event) => updateField("region", event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <label className="text-sm font-medium">Fecha de operación<input type="date" value={form.operationDate} onChange={(event) => updateField("operationDate", event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <label className="text-sm font-medium">Central<input value={form.central} onChange={(event) => updateField("central", event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <label className="text-sm font-medium">ADO_Distrito<input value={form.adoDistrict} onChange={(event) => updateField("adoDistrict", event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <label className="text-sm font-medium">Tipo<input value={form.type} onChange={(event) => updateField("type", event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <label className="text-sm font-medium">Provincia<input value={form.province} onChange={(event) => updateField("province", event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <label className="text-sm font-medium">Cantón<input value={form.canton} onChange={(event) => updateField("canton", event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <label className="text-sm font-medium">Distrito<input value={form.district} onChange={(event) => updateField("district", event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <label className="text-sm font-medium">Estado/Condición Inmobiliario<input value={form.inmobiliarioCondition} onChange={(event) => updateField("inmobiliarioCondition", event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <label className="text-sm font-medium">Operadores activos<input min="0" type="number" value={form.activeOperators} onChange={(event) => updateField("activeOperators", Number(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium">Administrador<input required value={form.administrator} onChange={(event) => updateField("administrator", event.target.value)} placeholder="Nombre completo" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium">Correo del administrador<input required type="email" value={form.administratorEmail} onChange={(event) => updateField("administratorEmail", event.target.value)} placeholder="admin@condominio.com" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium">Servicios activos<input min="0" type="number" value={form.activeServices} onChange={(event) => updateField("activeServices", Number(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium">Casas construidas<input min="0" type="number" value={form.builtHouses} onChange={(event) => updateField("builtHouses", Number(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium">NAP<input value={form.nap} onChange={(event) => updateField("nap", event.target.value)} placeholder="Código o referencia NAP" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium">Servicios retirados<input min="0" type="number" value={form.removedServices} onChange={(event) => updateField("removedServices", Number(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
-              <label className="text-sm font-medium">Responsable<select value={form.inmobiliarioId} onChange={(event) => updateField("inmobiliarioId", event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary"><option value="">Sin asignar</option>{inmobiliarios.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select></label>
+              <label className="text-sm font-medium">Responsable<input readOnly value={editingId ? (properties.find((property) => property.id === editingId)?.inmobiliarioName || "Usuario creador") : (user?.email ?? "Usuario actual")} className="mt-2 h-10 w-full rounded-md border bg-muted px-3 font-normal text-muted-foreground" /></label>
               <label className="text-sm font-medium">Estado<select value={form.status} onChange={(event) => updateField("status", event.target.value as PropertyStatus)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary"><option>Activa</option><option>Inactiva</option></select></label>
               <label className="text-sm font-medium sm:col-span-2 lg:col-span-3">Nota/actividad del registro<textarea value={form.registrationNote} onChange={(event) => updateField("registrationNote", event.target.value)} rows={3} placeholder="Describe la gestión o actividad realizada..." className="mt-2 w-full rounded-md border bg-background px-3 py-2 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium sm:col-span-2 lg:col-span-3">Observaciones<textarea value={form.observations} onChange={(event) => updateField("observations", event.target.value)} rows={3} placeholder="Gustos, necesidades o información relevante..." className="mt-2 w-full rounded-md border bg-background px-3 py-2 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
