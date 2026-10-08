@@ -1,14 +1,10 @@
 "use client";
 
 import {
-  Bath,
-  BedDouble,
   Building2,
   Check,
   Edit3,
   Eye,
-  MapPin,
-  Maximize2,
   Plus,
   Search,
   ToggleLeft,
@@ -18,6 +14,7 @@ import {
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   addDoc,
+  arrayUnion,
   collection,
   doc,
   getDocs,
@@ -31,52 +28,133 @@ import { db } from "@/lib/firebase";
 import { hasPermission } from "@/lib/rbac";
 
 type PropertyStatus = "Activa" | "Inactiva";
-type PropertyOperation = "Venta" | "Alquiler";
+
+type HistoryEntry = {
+  id: string;
+  type: "created" | "updated";
+  date: string;
+  userId: string;
+  user: string;
+  note: string;
+  observations: string;
+  changes: string[];
+};
 
 type Property = {
   id: string;
-  title: string;
-  type: string;
-  operation: PropertyOperation;
-  price: number;
-  city: string;
-  address: string;
-  bedrooms: number;
-  bathrooms: number;
-  area: number;
+  condominiumName: string;
+  administrator: string;
+  administratorEmail: string;
+  activeServices: number;
+  builtHouses: number;
+  nap: string;
+  removedServices: number;
+  registrationNote: string;
+  observations: string;
   status: PropertyStatus;
   inmobiliarioId: string;
   inmobiliarioName: string;
-  description: string;
-  latitude: number;
-  longitude: number;
   createdAt?: string;
+  createdBy?: string;
+  createdById?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+  updatedById?: string;
+  history: HistoryEntry[];
 };
 
+type PropertyForm = Omit<
+  Property,
+  | "id"
+  | "createdAt"
+  | "createdBy"
+  | "createdById"
+  | "updatedAt"
+  | "updatedBy"
+  | "updatedById"
+  | "history"
+  | "inmobiliarioName"
+>;
+
 type Inmobiliario = { id: string; name: string };
-type PropertyForm = Omit<Property, "id" | "createdAt" | "inmobiliarioName">;
 
 const emptyForm: PropertyForm = {
-  title: "",
-  type: "Casa",
-  operation: "Venta",
-  price: 0,
-  city: "",
-  address: "",
-  bedrooms: 0,
-  bathrooms: 0,
-  area: 0,
+  condominiumName: "",
+  administrator: "",
+  administratorEmail: "",
+  activeServices: 0,
+  builtHouses: 0,
+  nap: "",
+  removedServices: 0,
+  registrationNote: "",
+  observations: "",
   status: "Activa",
   inmobiliarioId: "",
-  description: "",
-  latitude: 0,
-  longitude: 0,
 };
 
 const propertyCollection = "propiedades";
+const fieldLabels: Record<keyof PropertyForm, string> = {
+  condominiumName: "Nombre del condominio",
+  administrator: "Administrador",
+  administratorEmail: "Correo del administrador",
+  activeServices: "Servicios activos",
+  builtHouses: "Casas construidas",
+  nap: "NAP",
+  removedServices: "Servicios retirados",
+  registrationNote: "Nota/actividad del registro",
+  observations: "Observaciones",
+  status: "Estado",
+  inmobiliarioId: "Responsable",
+};
+
+function text(value: unknown): string {
+  return typeof value === "string" ? value : String(value ?? "");
+}
+
+function number(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function readHistory(value: unknown): HistoryEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is HistoryEntry => Boolean(entry && typeof entry === "object" && "date" in entry));
+}
+
+function mapProperty(id: string, data: Record<string, unknown>, agents: Inmobiliario[]): Property {
+  const inmobiliarioId = text(data.inmobiliarioId);
+  return {
+    id,
+    condominiumName: text(data.condominiumName ?? data.title),
+    administrator: text(data.administrator),
+    administratorEmail: text(data.administratorEmail),
+    activeServices: number(data.activeServices),
+    builtHouses: number(data.builtHouses),
+    nap: text(data.nap),
+    removedServices: number(data.removedServices),
+    registrationNote: text(data.registrationNote),
+    observations: text(data.observations ?? data.description),
+    status: data.status === "Inactiva" ? "Inactiva" : "Activa",
+    inmobiliarioId,
+    inmobiliarioName: (agents.find((agent) => agent.id === inmobiliarioId)?.name ?? text(data.inmobiliarioName)) || "Sin asignar",
+    createdAt: text(data.createdAt),
+    createdBy: text(data.createdBy),
+    createdById: text(data.createdById),
+    updatedAt: text(data.updatedAt),
+    updatedBy: text(data.updatedBy),
+    updatedById: text(data.updatedById),
+    history: readHistory(data.history),
+  };
+}
+
+function changedFields(previous: Property, next: PropertyForm): string[] {
+  return (Object.keys(fieldLabels) as Array<keyof PropertyForm>)
+    .filter((field) => previous[field] !== next[field])
+    .map((field) => fieldLabels[field]);
+}
 
 export default function PropiedadesPage() {
-  const { role } = useRBAC();
+  const { role, user } = useRBAC();
   const canCreate = hasPermission(role, "propiedades", "create");
   const canUpdate = hasPermission(role, "propiedades", "update");
   const [properties, setProperties] = useState<Property[]>([]);
@@ -86,7 +164,6 @@ export default function PropiedadesPage() {
   const [selected, setSelected] = useState<Property | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"Todas" | PropertyStatus>("Todas");
-  const [operationFilter, setOperationFilter] = useState<"Todas" | PropertyOperation>("Todas");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -103,53 +180,41 @@ export default function PropiedadesPage() {
       }
       try {
         const agentSnapshot = await getDocs(collection(db, "inmobiliarios"));
-        const agents = agentSnapshot.docs.map((item) => ({ id: item.id, name: String(item.data().name ?? "") }));
+        const agents = agentSnapshot.docs.map((item) => ({ id: item.id, name: text(item.data().name) }));
         if (!active) return;
         setInmobiliarios(agents);
-        unsubscribeProperties = onSnapshot(collection(db, propertyCollection), (propertySnapshot) => {
-          const loaded = propertySnapshot.docs.map((item) => {
-            const data = item.data();
-            const inmobiliarioId = String(data.inmobiliarioId ?? "");
-            return {
-              id: item.id,
-              title: String(data.title ?? ""),
-              type: String(data.type ?? "Casa"),
-              operation: data.operation === "Alquiler" ? "Alquiler" : "Venta",
-              price: Number(data.price ?? 0),
-              city: String(data.city ?? ""),
-              address: String(data.address ?? ""),
-              bedrooms: Number(data.bedrooms ?? 0),
-              bathrooms: Number(data.bathrooms ?? 0),
-              area: Number(data.area ?? 0),
-              status: data.status === "Inactiva" ? "Inactiva" : "Activa",
-              inmobiliarioId,
-              inmobiliarioName: agents.find((agent) => agent.id === inmobiliarioId)?.name ?? String(data.inmobiliarioName ?? "Sin asignar"),
-              description: String(data.description ?? ""),
-              latitude: Number(data.latitude ?? 0),
-              longitude: Number(data.longitude ?? 0),
-              createdAt: String(data.createdAt ?? ""),
-            } as Property;
-          });
-          setProperties(loaded);
+        unsubscribeProperties = onSnapshot(collection(db, propertyCollection), (snapshot) => {
+          setProperties(snapshot.docs.map((item) => mapProperty(item.id, item.data(), agents)));
           setLoading(false);
         }, (loadError) => {
-          console.error("No se pudieron cargar las propiedades.", loadError);
-          setError("No se pudieron cargar las propiedades. Revisa la configuración y las reglas de Firestore.");
+          console.error("No se pudieron cargar los condominios.", loadError);
+          setError("No se pudieron cargar los condominios. Revisa la configuración y las reglas de Firestore.");
           setLoading(false);
         });
       } catch (loadError) {
-        console.error("No se pudieron cargar las propiedades.", loadError);
-        if (active) setError("No se pudieron cargar las propiedades. Revisa la configuración y las reglas de Firestore.");
+        console.error("No se pudieron cargar los condominios.", loadError);
+        if (active) setError("No se pudieron cargar los condominios.");
       }
     }
+
     void loadData();
-    return () => { active = false; unsubscribeProperties?.(); };
+    return () => {
+      active = false;
+      unsubscribeProperties?.();
+    };
   }, []);
 
   const filteredProperties = useMemo(() => properties.filter((property) => {
-    const matchesQuery = `${property.title} ${property.city} ${property.type} ${property.inmobiliarioName}`.toLowerCase().includes(query.toLowerCase());
-    return matchesQuery && (statusFilter === "Todas" || property.status === statusFilter) && (operationFilter === "Todas" || property.operation === operationFilter);
-  }), [operationFilter, properties, query, statusFilter]);
+    const haystack = [
+      property.condominiumName,
+      property.administrator,
+      property.administratorEmail,
+      property.nap,
+      property.inmobiliarioName,
+    ].join(" ").toLowerCase();
+    return haystack.includes(query.toLowerCase())
+      && (statusFilter === "Todas" || property.status === statusFilter);
+  }), [properties, query, statusFilter]);
 
   function updateField<K extends keyof PropertyForm>(field: K, value: PropertyForm[K]) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -166,24 +231,29 @@ export default function PropiedadesPage() {
   function openEdit(property: Property) {
     setEditingId(property.id);
     setForm({
-      title: property.title,
-      type: property.type,
-      operation: property.operation,
-      price: property.price,
-      city: property.city,
-      address: property.address,
-      bedrooms: property.bedrooms,
-      bathrooms: property.bathrooms,
-      area: property.area,
+      condominiumName: property.condominiumName,
+      administrator: property.administrator,
+      administratorEmail: property.administratorEmail,
+      activeServices: property.activeServices,
+      builtHouses: property.builtHouses,
+      nap: property.nap,
+      removedServices: property.removedServices,
+      registrationNote: property.registrationNote,
+      observations: property.observations,
       status: property.status,
       inmobiliarioId: property.inmobiliarioId,
-      description: property.description,
-      latitude: property.latitude,
-      longitude: property.longitude,
     });
     setSelected(null);
     setError("");
     setShowForm(true);
+  }
+
+  function actor() {
+    return {
+      userId: user?.uid ?? "",
+      user: user?.email ?? "Usuario actual",
+      date: new Date().toISOString(),
+    };
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -192,29 +262,65 @@ export default function PropiedadesPage() {
       setError("Firebase no está configurado. Completa las variables de entorno para guardar cambios.");
       return;
     }
-    if (!form.title.trim() || !form.city.trim() || form.price <= 0 || form.area <= 0) {
-      setError("Completa título, ciudad, precio y área con valores válidos.");
+    if (!form.condominiumName.trim() || !form.administrator.trim() || !form.administratorEmail.trim()) {
+      setError("Completa el nombre del condominio, el administrador y su correo.");
       return;
     }
+
     setSaving(true);
     setError("");
     const agent = inmobiliarios.find((item) => item.id === form.inmobiliarioId);
-    const payload = { ...form, title: form.title.trim(), city: form.city.trim(), inmobiliarioName: agent?.name ?? "Sin asignar" };
+    const currentActor = actor();
+    const payload = {
+      ...form,
+      condominiumName: form.condominiumName.trim(),
+      administrator: form.administrator.trim(),
+      administratorEmail: form.administratorEmail.trim(),
+      registrationNote: form.registrationNote.trim(),
+      observations: form.observations.trim(),
+      inmobiliarioName: agent?.name ?? "Sin asignar",
+      updatedAt: currentActor.date,
+      updatedBy: currentActor.user,
+      updatedById: currentActor.userId,
+    };
+
     try {
       if (editingId) {
-        await updateDoc(doc(db, propertyCollection, editingId), payload);
-        setProperties((current) => current.map((property) => property.id === editingId ? { ...property, ...payload } : property));
+        const previous = properties.find((property) => property.id === editingId);
+        if (!previous) throw new Error("No se encontró el condominio que se quiere actualizar.");
+        const changes = changedFields(previous, form);
+        const entry: HistoryEntry = {
+          id: crypto.randomUUID(),
+          type: "updated",
+          ...currentActor,
+          note: form.registrationNote.trim(),
+          observations: form.observations.trim(),
+          changes: changes.length ? changes : ["Actualización de bitácora"],
+        };
+        await updateDoc(doc(db, propertyCollection, editingId), { ...payload, history: arrayUnion(entry) });
       } else {
-        const createdAt = new Date().toISOString();
-        const created = await addDoc(collection(db, propertyCollection), { ...payload, createdAt });
-        setProperties((current) => [{ ...payload, createdAt, id: created.id }, ...current]);
+        const entry: HistoryEntry = {
+          id: crypto.randomUUID(),
+          type: "created",
+          ...currentActor,
+          note: form.registrationNote.trim(),
+          observations: form.observations.trim(),
+          changes: ["Registro inicial del condominio"],
+        };
+        await addDoc(collection(db, propertyCollection), {
+          ...payload,
+          createdAt: currentActor.date,
+          createdBy: currentActor.user,
+          createdById: currentActor.userId,
+          history: [entry],
+        });
       }
       setShowForm(false);
       setEditingId(null);
       setForm(emptyForm);
     } catch (saveError) {
-      console.error("No se pudo guardar la propiedad.", saveError);
-      setError("No se pudo guardar la propiedad. Verifica los permisos de Firestore.");
+      console.error("No se pudo guardar el condominio.", saveError);
+      setError("No se pudo guardar el condominio. Verifica los permisos de Firestore.");
     } finally {
       setSaving(false);
     }
@@ -222,13 +328,26 @@ export default function PropiedadesPage() {
 
   async function toggleStatus(property: Property) {
     if (!db || !canUpdate) return;
+    const currentActor = actor();
     const nextStatus: PropertyStatus = property.status === "Activa" ? "Inactiva" : "Activa";
+    const entry: HistoryEntry = {
+      id: crypto.randomUUID(),
+      type: "updated",
+      ...currentActor,
+      note: `Estado cambiado a ${nextStatus}.`,
+      observations: "",
+      changes: ["Estado"],
+    };
     try {
-      await updateDoc(doc(db, propertyCollection, property.id), { status: nextStatus });
-      setProperties((current) => current.map((item) => item.id === property.id ? { ...item, status: nextStatus } : item));
-      if (selected?.id === property.id) setSelected({ ...property, status: nextStatus });
+      await updateDoc(doc(db, propertyCollection, property.id), {
+        status: nextStatus,
+        updatedAt: currentActor.date,
+        updatedBy: currentActor.user,
+        updatedById: currentActor.userId,
+        history: arrayUnion(entry),
+      });
     } catch (statusError) {
-      console.error("No se pudo cambiar el estado de la propiedad.", statusError);
+      console.error("No se pudo cambiar el estado del condominio.", statusError);
       setError("No se pudo cambiar el estado. Verifica los permisos de Firestore.");
     }
   }
@@ -236,34 +355,62 @@ export default function PropiedadesPage() {
   return (
     <section className="space-y-6">
       <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div><p className="text-sm font-medium text-primary">Inventario inmobiliario</p><h1 className="mt-2 text-3xl font-bold tracking-tight">Propiedades</h1><p className="mt-2 text-muted-foreground">Consulta y organiza tu inventario de propiedades.</p></div>
-        {canCreate && <Button onClick={openCreate}><Plus size={17} className="mr-2" /> Nueva propiedad</Button>}
+        <div>
+          <p className="text-sm font-medium text-primary">Registro colaborativo</p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight">Condominios</h1>
+          <p className="mt-2 text-muted-foreground">Consulta, actualiza y revisa la bitácora de cada condominio.</p>
+        </div>
+        {canCreate && <Button onClick={openCreate}><Plus size={17} className="mr-2" /> Nuevo condominio</Button>}
       </header>
+
       {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
-      {showForm && <Card><CardHeader className="flex-row items-center justify-between"><CardTitle>{editingId ? "Editar propiedad" : "Nueva propiedad"}</CardTitle><Button variant="ghost" size="icon" onClick={() => setShowForm(false)} aria-label="Cerrar formulario"><X size={18} /></Button></CardHeader><CardContent><form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <label className="text-sm font-medium lg:col-span-2">Título<input required value={form.title} onChange={(event) => updateField("title", event.target.value)} placeholder="Casa moderna en Escazú" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
-        <label className="text-sm font-medium">Tipo<select value={form.type} onChange={(event) => updateField("type", event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary"><option>Casa</option><option>Apartamento</option><option>Condominio</option><option>Terreno</option><option>Local comercial</option></select></label>
-        <label className="text-sm font-medium">Operación<select value={form.operation} onChange={(event) => updateField("operation", event.target.value as PropertyOperation)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary"><option>Venta</option><option>Alquiler</option></select></label>
-        <label className="text-sm font-medium">Precio<input required min="1" type="number" value={form.price || ""} onChange={(event) => updateField("price", Number(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
-        <label className="text-sm font-medium">Área (m²)<input required min="1" type="number" value={form.area || ""} onChange={(event) => updateField("area", Number(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
-        <label className="text-sm font-medium">Ciudad<input required value={form.city} onChange={(event) => updateField("city", event.target.value)} placeholder="San José" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
-        <label className="text-sm font-medium lg:col-span-2">Dirección<input value={form.address} onChange={(event) => updateField("address", event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
-        <label className="text-sm font-medium">Latitud<input type="number" step="any" min="8" max="12" value={form.latitude || ""} onChange={(event) => updateField("latitude", Number(event.target.value))} placeholder="9.9347" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
-        <label className="text-sm font-medium">Longitud<input type="number" step="any" min="-86" max="-82" value={form.longitude || ""} onChange={(event) => updateField("longitude", Number(event.target.value))} placeholder="-84.0875" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
-        <label className="text-sm font-medium">Inmobiliario<select value={form.inmobiliarioId} onChange={(event) => updateField("inmobiliarioId", event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary"><option value="">Sin asignar</option>{inmobiliarios.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select></label>
-        <label className="text-sm font-medium">Habitaciones<input min="0" type="number" value={form.bedrooms} onChange={(event) => updateField("bedrooms", Number(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
-        <label className="text-sm font-medium">Baños<input min="0" type="number" value={form.bathrooms} onChange={(event) => updateField("bathrooms", Number(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
-        <label className="text-sm font-medium">Estado<select value={form.status} onChange={(event) => updateField("status", event.target.value as PropertyStatus)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary"><option>Activa</option><option>Inactiva</option></select></label>
-        <label className="text-sm font-medium sm:col-span-2 lg:col-span-3">Descripción<textarea value={form.description} onChange={(event) => updateField("description", event.target.value)} rows={3} className="mt-2 w-full rounded-md border bg-background px-3 py-2 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
-        <div className="flex justify-end gap-2 sm:col-span-2 lg:col-span-3"><Button type="button" variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar propiedad"}</Button></div>
-      </form></CardContent></Card>}
+      {showForm && (
+        <Card>
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle>{editingId ? "Editar condominio" : "Nuevo condominio"}</CardTitle>
+            <Button variant="ghost" size="icon" onClick={() => setShowForm(false)} aria-label="Cerrar formulario"><X size={18} /></Button>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <label className="text-sm font-medium lg:col-span-2">Nombre del condominio<input required value={form.condominiumName} onChange={(event) => updateField("condominiumName", event.target.value)} placeholder="Condominio Las Flores" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <label className="text-sm font-medium">Administrador<input required value={form.administrator} onChange={(event) => updateField("administrator", event.target.value)} placeholder="Nombre completo" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <label className="text-sm font-medium">Correo del administrador<input required type="email" value={form.administratorEmail} onChange={(event) => updateField("administratorEmail", event.target.value)} placeholder="admin@condominio.com" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <label className="text-sm font-medium">Servicios activos<input min="0" type="number" value={form.activeServices} onChange={(event) => updateField("activeServices", Number(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <label className="text-sm font-medium">Casas construidas<input min="0" type="number" value={form.builtHouses} onChange={(event) => updateField("builtHouses", Number(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <label className="text-sm font-medium">NAP<input value={form.nap} onChange={(event) => updateField("nap", event.target.value)} placeholder="Código o referencia NAP" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <label className="text-sm font-medium">Servicios retirados<input min="0" type="number" value={form.removedServices} onChange={(event) => updateField("removedServices", Number(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <label className="text-sm font-medium">Responsable<select value={form.inmobiliarioId} onChange={(event) => updateField("inmobiliarioId", event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary"><option value="">Sin asignar</option>{inmobiliarios.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select></label>
+              <label className="text-sm font-medium">Estado<select value={form.status} onChange={(event) => updateField("status", event.target.value as PropertyStatus)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary"><option>Activa</option><option>Inactiva</option></select></label>
+              <label className="text-sm font-medium sm:col-span-2 lg:col-span-3">Nota/actividad del registro<textarea value={form.registrationNote} onChange={(event) => updateField("registrationNote", event.target.value)} rows={3} placeholder="Describe la gestión o actividad realizada..." className="mt-2 w-full rounded-md border bg-background px-3 py-2 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <label className="text-sm font-medium sm:col-span-2 lg:col-span-3">Observaciones<textarea value={form.observations} onChange={(event) => updateField("observations", event.target.value)} rows={3} placeholder="Gustos, necesidades o información relevante..." className="mt-2 w-full rounded-md border bg-background px-3 py-2 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <div className="flex justify-end gap-2 sm:col-span-2 lg:col-span-3"><Button type="button" variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar condominio"}</Button></div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
 
-      <Card><CardHeader className="flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><CardTitle>Inventario</CardTitle><p className="mt-1 text-sm text-muted-foreground">{properties.length} propiedades registradas</p></div><div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row"><div className="relative"><Search size={16} className="absolute left-3 top-2.5 text-muted-foreground" /><input aria-label="Buscar propiedades" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar propiedad..." className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-primary sm:w-52" /></div><select aria-label="Filtrar por estado" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"><option>Todas</option><option>Activa</option><option>Inactiva</option></select><select aria-label="Filtrar por operación" value={operationFilter} onChange={(event) => setOperationFilter(event.target.value as typeof operationFilter)} className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"><option>Todas</option><option>Venta</option><option>Alquiler</option></select></div></CardHeader><CardContent>
-        {loading ? <p className="py-10 text-center text-sm text-muted-foreground">Cargando propiedades...</p> : !db ? <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">Firebase aún no está conectado. Configura las variables de entorno para cargar y administrar datos reales.</p> : filteredProperties.length === 0 ? <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No hay propiedades que coincidan con los filtros.</p> : <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{filteredProperties.map((property) => <article key={property.id} className="rounded-xl border p-4 transition-shadow hover:shadow-md"><div className="flex items-start justify-between gap-3"><div className="flex items-center gap-2"><span className="rounded-lg bg-primary/10 p-2 text-primary"><Building2 size={18} /></span><div><h2 className="font-semibold">{property.title}</h2><p className="text-xs text-muted-foreground">{property.type} · {property.operation}</p></div></div><span className={`rounded-full px-2 py-1 text-[11px] font-medium ${property.status === "Activa" ? "bg-emerald-50 text-emerald-700" : "bg-muted text-muted-foreground"}`}>{property.status}</span></div><div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground"><span className="flex items-center gap-1"><MapPin size={13} />{property.city}</span><span className="flex items-center gap-1"><Maximize2 size={13} />{property.area} m²</span><span className="flex items-center gap-1"><BedDouble size={13} />{property.bedrooms}</span><span className="flex items-center gap-1"><Bath size={13} />{property.bathrooms}</span></div><p className="mt-4 text-lg font-bold">₡{property.price.toLocaleString("es-CR")}</p><p className="mt-1 truncate text-xs text-muted-foreground">Asignada a: {property.inmobiliarioName}</p><div className="mt-4 flex gap-2 border-t pt-3"><Button variant="outline" size="sm" onClick={() => setSelected(property)}><Eye size={14} className="mr-1.5" /> Ver detalle</Button>{canUpdate && <><Button variant="ghost" size="sm" onClick={() => openEdit(property)}><Edit3 size={14} className="mr-1.5" /> Editar</Button><Button variant="ghost" size="icon" onClick={() => void toggleStatus(property)} aria-label={property.status === "Activa" ? "Desactivar propiedad" : "Activar propiedad"}>{property.status === "Activa" ? <ToggleRight size={20} className="text-emerald-600" /> : <ToggleLeft size={20} />}</Button></>}</div></article>)}</div>}
-      </CardContent></Card>
+      <Card>
+        <CardHeader className="flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div><CardTitle>Condominios registrados</CardTitle><p className="mt-1 text-sm text-muted-foreground">{properties.length} registros</p></div>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <div className="relative"><Search size={16} className="absolute left-3 top-2.5 text-muted-foreground" /><input aria-label="Buscar condominios" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar condominio..." className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-primary sm:w-56" /></div>
+            <select aria-label="Filtrar por estado" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"><option>Todas</option><option>Activa</option><option>Inactiva</option></select>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loading ? <p className="py-10 text-center text-sm text-muted-foreground">Cargando condominios...</p> : !db ? <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">Firebase aún no está conectado.</p> : filteredProperties.length === 0 ? <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No hay condominios que coincidan con los filtros.</p> : <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{filteredProperties.map((property) => (
+            <article key={property.id} className="rounded-xl border p-4 transition-shadow hover:shadow-md">
+              <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-2"><span className="rounded-lg bg-primary/10 p-2 text-primary"><Building2 size={18} /></span><div><h2 className="font-semibold">{property.condominiumName || "Sin nombre"}</h2><p className="text-xs text-muted-foreground">Administrador: {property.administrator || "Sin asignar"}</p></div></div><span className={`rounded-full px-2 py-1 text-xs font-medium ${property.status === "Activa" ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}`}>{property.status}</span></div>
+              <div className="mt-4 grid grid-cols-2 gap-2 text-sm"><div><p className="text-muted-foreground">Servicios activos</p><p className="font-semibold">{property.activeServices}</p></div><div><p className="text-muted-foreground">Casas construidas</p><p className="font-semibold">{property.builtHouses}</p></div><div><p className="text-muted-foreground">NAP</p><p className="font-semibold">{property.nap || "—"}</p></div><div><p className="text-muted-foreground">Retirados</p><p className="font-semibold">{property.removedServices}</p></div></div>
+              <p className="mt-4 border-t pt-3 text-xs text-muted-foreground">Última actualización: {property.updatedBy || property.createdBy || "Sin registrar"}</p>
+              <div className="mt-4 flex justify-between gap-2"><Button variant="outline" size="sm" onClick={() => setSelected(property)}><Eye size={15} className="mr-1" /> Bitácora</Button>{canUpdate && <><Button variant="ghost" size="icon" onClick={() => openEdit(property)} aria-label={`Editar ${property.condominiumName}`}><Edit3 size={16} /></Button><Button variant="ghost" size="icon" onClick={() => void toggleStatus(property)} aria-label="Cambiar estado">{property.status === "Activa" ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}</Button></>}</div>
+            </article>
+          ))}</div>}
+        </CardContent>
+      </Card>
 
-      {selected && <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Detalle de propiedad"><Card className="max-h-[90vh] w-full max-w-2xl overflow-y-auto"><CardHeader className="flex-row items-start justify-between"><div><p className="text-sm text-primary">{selected.type} · {selected.operation}</p><CardTitle className="mt-2 text-2xl">{selected.title}</CardTitle><p className="mt-2 flex items-center gap-1 text-sm text-muted-foreground"><MapPin size={15} />{selected.address ? `${selected.address}, ` : ""}{selected.city}</p></div><Button variant="ghost" size="icon" onClick={() => setSelected(null)} aria-label="Cerrar detalle"><X size={18} /></Button></CardHeader><CardContent><div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><div className="rounded-lg bg-muted p-3"><p className="text-xs text-muted-foreground">Precio</p><p className="mt-1 font-semibold">₡{selected.price.toLocaleString("es-CR")}</p></div><div className="rounded-lg bg-muted p-3"><p className="text-xs text-muted-foreground">Área</p><p className="mt-1 font-semibold">{selected.area} m²</p></div><div className="rounded-lg bg-muted p-3"><p className="text-xs text-muted-foreground">Habitaciones</p><p className="mt-1 font-semibold">{selected.bedrooms}</p></div><div className="rounded-lg bg-muted p-3"><p className="text-xs text-muted-foreground">Baños</p><p className="mt-1 font-semibold">{selected.bathrooms}</p></div></div><p className="mt-6 whitespace-pre-wrap text-sm text-muted-foreground">{selected.description || "Sin descripción registrada."}</p><div className="mt-6 flex items-center gap-2 border-t pt-4 text-sm"><Check size={16} className="text-emerald-600" /> Inmobiliario responsable: <strong>{selected.inmobiliarioName}</strong></div></CardContent></Card></div>}
+      {selected && <Card><CardHeader className="flex-row items-center justify-between"><div><CardTitle>Bitácora · {selected.condominiumName || "Condominio"}</CardTitle><p className="mt-1 text-sm text-muted-foreground">Creado por {selected.createdBy || "Sin registrar"}{selected.createdAt && ` · ${new Date(selected.createdAt).toLocaleString("es-CR")}`}</p></div><Button variant="ghost" size="icon" onClick={() => setSelected(null)} aria-label="Cerrar bitácora"><X size={18} /></Button></CardHeader><CardContent><div className="space-y-5">{selected.history.length === 0 ? <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">Este registro no tiene historial todavía.</p> : [...selected.history].sort((a, b) => b.date.localeCompare(a.date)).map((entry) => <div key={entry.id} className="flex gap-3 border-b pb-4 last:border-0"><span className="mt-1 rounded-full bg-primary/10 p-2 text-primary"><Check size={15} /></span><div className="min-w-0 flex-1"><div className="flex flex-col justify-between gap-1 sm:flex-row"><p className="font-semibold">{entry.type === "created" ? "Registro inicial" : "Actualización"}</p><time className="text-xs text-muted-foreground">{new Date(entry.date).toLocaleString("es-CR")}</time></div><p className="mt-1 text-sm">Por {entry.user || "Usuario actual"}</p>{entry.changes.length > 0 && <p className="mt-1 text-xs text-muted-foreground">Cambios: {entry.changes.join(", ")}</p>}{entry.note && <p className="mt-2 text-sm text-muted-foreground">{entry.note}</p>}{entry.observations && <p className="mt-1 text-sm text-muted-foreground">Observaciones: {entry.observations}</p>}</div></div>)}</div></CardContent></Card>}
     </section>
   );
 }
