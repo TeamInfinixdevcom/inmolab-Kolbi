@@ -14,6 +14,7 @@ const condominium = (createdBy, assignedTo, createdByRole) => ({
   assignedTo,
   createdByRole,
   updatedBy: createdBy,
+  status: "Activa",
 });
 
 before(async () => {
