@@ -1,8 +1,8 @@
 "use client";
 
-import { Building2, Edit3, Plus, ToggleLeft, ToggleRight, UserRound, X } from "lucide-react";
+import { Building2, Edit3, Plus, ToggleLeft, ToggleRight, Trash2, UserRound, X } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { collection, doc, getDocs, serverTimestamp, writeBatch } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDocs, serverTimestamp, writeBatch } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useRBAC } from "@/components/auth/rbac-provider";
@@ -180,6 +180,21 @@ export default function CondominiosPage() {
     }
   }
 
+  async function remove(item: Condominium) {
+    const firestore = db;
+    const canDeleteItem = role === "ADMIN" || (role === "AGENTE" && item.createdBy === user?.uid);
+    if (!firestore || !user || !canDeleteItem) return;
+    if (!window.confirm(`¿Deseas eliminar el condominio "${item.name}"? Esta acción no se puede deshacer.`)) return;
+
+    try {
+      await deleteDoc(doc(firestore, "condominios", item.id));
+      setItems((current) => current.filter((currentItem) => currentItem.id !== item.id));
+    } catch (deleteError) {
+      console.error("No se pudo eliminar el condominio.", deleteError);
+      setError("No se pudo eliminar el condominio. Verifica los permisos de Firestore.");
+    }
+  }
+
   return (
     <section className="space-y-6">
       <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
@@ -195,7 +210,7 @@ export default function CondominiosPage() {
         <label className="text-sm font-medium">Usuario responsable{role === "AGENTE" && !editingId ? <input value={user?.displayName ?? user?.email ?? "Usuario actual"} disabled className="mt-2 h-10 w-full rounded-md border bg-muted px-3 font-normal" /> : <select required disabled={!canEditAll} value={form.assignedTo} onChange={(event) => setForm({ ...form, assignedTo: event.target.value })} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal"><option value="">Seleccionar usuario</option>{users.map((item) => <option key={item.uid} value={item.uid}>{item.displayName} — {item.role}</option>)}</select>}</label>
         <div className="flex justify-end gap-2 sm:col-span-2"><Button type="button" variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar condominio"}</Button></div>
       </form></CardContent></Card>}
-      <Card><CardHeader><CardTitle>Todos los condominios</CardTitle></CardHeader><CardContent>{loading ? <p className="py-10 text-center text-sm text-muted-foreground">Cargando condominios...</p> : items.length === 0 ? <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No hay condominios registrados.</p> : <div className="grid gap-4 md:grid-cols-2">{items.map((item) => { const canEditItem = canEditAll || (role === "AGENTE" && (item.createdBy === user?.uid || (item.assignedTo === user?.uid && (item.createdByRole === "ADMIN" || item.createdByRole === "SUPERVISOR")))); return <article key={item.id} className="rounded-xl border p-4"><div className="flex items-start justify-between gap-3"><div className="flex items-center gap-3"><span className="rounded-lg bg-primary/10 p-2 text-primary"><Building2 size={18} /></span><div><h2 className="font-semibold">{item.name}</h2><p className="text-sm text-muted-foreground">{item.administrator || "Sin administrador"}{item.administratorEmail && ` · ${item.administratorEmail}`}</p></div></div>{canEditItem && <div className="flex gap-1"><Button variant="ghost" size="icon" onClick={() => void toggleStatus(item)} aria-label={`${item.status === "Activa" ? "Inactivar" : "Activar"} ${item.name}`}>{item.status === "Activa" ? <ToggleRight size={20} className="text-emerald-600" /> : <ToggleLeft size={20} />}</Button><Button variant="ghost" size="icon" onClick={() => openEdit(item)} aria-label={`Editar ${item.name}`}><Edit3 size={16} /></Button></div>}</div><div className="mt-4 flex items-center justify-between text-sm"><p className="flex items-center gap-2 text-muted-foreground"><UserRound size={15} /> Responsable: {item.assignedToName || item.assignedToEmail || "Sin datos"}</p><span className={`rounded-full px-2 py-1 text-xs font-medium ${item.status === "Activa" ? "bg-emerald-50 text-emerald-700" : "bg-muted text-muted-foreground"}`}>{item.status}</span></div></article>; })}</div>}</CardContent></Card>
+      <Card><CardHeader><CardTitle>Todos los condominios</CardTitle></CardHeader><CardContent>{loading ? <p className="py-10 text-center text-sm text-muted-foreground">Cargando condominios...</p> : items.length === 0 ? <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No hay condominios registrados.</p> : <div className="grid gap-4 md:grid-cols-2">{items.map((item) => { const canEditItem = canEditAll || (role === "AGENTE" && (item.createdBy === user?.uid || (item.assignedTo === user?.uid && (item.createdByRole === "ADMIN" || item.createdByRole === "SUPERVISOR")))); const canDeleteItem = role === "ADMIN" || (role === "AGENTE" && item.createdBy === user?.uid); return <article key={item.id} className="rounded-xl border p-4"><div className="flex items-start justify-between gap-3"><div className="flex items-center gap-3"><span className="rounded-lg bg-primary/10 p-2 text-primary"><Building2 size={18} /></span><div><h2 className="font-semibold">{item.name}</h2><p className="text-sm text-muted-foreground">{item.administrator || "Sin administrador"}{item.administratorEmail && ` · ${item.administratorEmail}`}</p></div></div>{(canEditItem || canDeleteItem) && <div className="flex gap-1">{canEditItem && <><Button variant="ghost" size="icon" onClick={() => void toggleStatus(item)} aria-label={`${item.status === "Activa" ? "Inactivar" : "Activar"} ${item.name}`}>{item.status === "Activa" ? <ToggleRight size={20} className="text-emerald-600" /> : <ToggleLeft size={20} />}</Button><Button variant="ghost" size="icon" onClick={() => openEdit(item)} aria-label={`Editar ${item.name}`}><Edit3 size={16} /></Button></>}{canDeleteItem && <Button variant="ghost" size="icon" onClick={() => void remove(item)} aria-label={`Eliminar ${item.name}`}><Trash2 size={16} className="text-destructive" /></Button>}</div>}</div><div className="mt-4 flex items-center justify-between text-sm"><p className="flex items-center gap-2 text-muted-foreground"><UserRound size={15} /> Responsable: {item.assignedToName || item.assignedToEmail || "Sin datos"}</p><span className={`rounded-full px-2 py-1 text-xs font-medium ${item.status === "Activa" ? "bg-emerald-50 text-emerald-700" : "bg-muted text-muted-foreground"}`}>{item.status}</span></div></article>; })}</div>}</CardContent></Card>
     </section>
   );
 }
