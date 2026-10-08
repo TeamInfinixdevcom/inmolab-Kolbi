@@ -23,6 +23,15 @@ service cloud.firestore {
         || data.responsibleId == request.auth.uid
         || data.userId == request.auth.uid;
     }
+    function createdByCurrentUser(data) {
+      return (data.keys().hasAll(['createdById'])
+        && data.createdById == request.auth.uid)
+        || owns(data);
+    }
+    function preservesCreator(data) {
+      return !data.keys().hasAll(['createdById'])
+        || request.resource.data.createdById == data.createdById;
+    }
 
     match /inmobiliarios/{id} {
       allow read: if signedIn();
@@ -31,8 +40,9 @@ service cloud.firestore {
 
     match /propiedades/{id} {
       allow read: if signedIn();
-      allow create: if isStaff() || (isAgent() && request.resource.data.inmobiliarioId == request.auth.uid);
-      allow update: if isStaff() || (isAgent() && owns(resource.data) && request.resource.data.inmobiliarioId == request.auth.uid);
+      allow create: if signedIn();
+      allow update: if signedIn() && createdByCurrentUser(resource.data)
+        && preservesCreator(resource.data);
       allow delete: if isAdmin();
     }
 
