@@ -41,16 +41,6 @@ service cloud.firestore {
       return exists(/databases/$(database)/documents/users/$(resource.data.createdBy))
         && get(/databases/$(database)/documents/users/$(resource.data.createdBy)).data.role in ['ADMIN', 'SUPERVISOR'];
     }
-    function createdByCurrentUser(data) {
-      return (data.keys().hasAll(['createdById'])
-        && data.createdById == request.auth.uid)
-        || owns(data);
-    }
-    function preservesCreator(data) {
-      return !data.keys().hasAll(['createdById'])
-        || request.resource.data.createdById == data.createdById;
-    }
-
     match /inmobiliarios/{id} {
       allow read: if hasRole();
       allow create, update, delete: if isAdmin();
@@ -106,11 +96,13 @@ service cloud.firestore {
       allow create: if isAdmin()
         && createsAsSelf()
         && request.resource.data.createdByRole == role()
+        && request.resource.data.status in ['Activa', 'Inactiva']
         && assignedUserExists()
         || (isAgent()
           && request.resource.data.createdBy == request.auth.uid
           && request.resource.data.assignedTo == request.auth.uid
           && request.resource.data.updatedBy == request.auth.uid
+          && request.resource.data.status in ['Activa', 'Inactiva']
           && request.resource.data.createdByRole == role());
       allow update: if isAdmin()
         && assignedUserExists()
@@ -120,6 +112,7 @@ service cloud.firestore {
             || (resource.data.assignedTo == request.auth.uid && createdByStaff()))
           && request.resource.data.assignedTo == resource.data.assignedTo
           && request.resource.data.createdBy == resource.data.createdBy
+          && (!request.resource.data.keys().hasAny(['status']) || request.resource.data.status in ['Activa', 'Inactiva'])
           && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['assignedTo', 'assignedToName', 'assignedToEmail', 'createdBy'])
           && updatesAsSelf());
       allow delete: if isAdmin() || (isAgent() && resource.data.createdBy == request.auth.uid);

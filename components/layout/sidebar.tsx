@@ -15,7 +15,6 @@ const navigation = [
   { href: "/", label: "Dashboard", icon: Home, module: "dashboard" },
   { href: "/inmobiliarios", label: "Inmobiliarios", icon: Users, module: "inmobiliarios" },
   { href: "/propiedades", label: "Propiedades", icon: Building2, module: "propiedades" },
-  { href: "/clientes", label: "Clientes", icon: Users, module: "clientes" },
   { href: "/eventos", label: "Eventos", icon: CalendarDays, module: "eventos" },
   { href: "/actividad", label: "Actividad", icon: Activity, module: "actividad" },
   { href: "/mapa", label: "Mapa", icon: Map, module: "mapa" },
