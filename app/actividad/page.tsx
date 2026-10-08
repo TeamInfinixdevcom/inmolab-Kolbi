@@ -8,8 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useRBAC } from "@/components/auth/rbac-provider";
 import { db } from "@/lib/firebase";
 import { hasPermission } from "@/lib/rbac";
+import { creationAudit } from "@/lib/firestore-audit";
 
-type ActivityItem = { id: string; type: "Visita" | "Llamada" | "Reunión" | "Gestión"; description: string; date: string; user: string; subject: string };
+type ActivityItem = { id: string; type: "Visita" | "Llamada" | "Reunión" | "Gestión"; description: string; date: string; user: string; userId?: string; subject: string; createdBy?: string };
 const icons = { Visita: CalendarDays, Llamada: Phone, Reunión: Users, Gestión: Activity };
 
 export default function ActividadPage() {
@@ -32,7 +33,7 @@ export default function ActividadPage() {
   async function submit(event: FormEvent) {
     event.preventDefault(); if (!db) { setError("Firebase no está configurado."); return; }
     if (!form.description.trim()) { setError("La descripción es obligatoria."); return; }
-    const item = { ...form, description: form.description.trim(), date: new Date().toISOString(), user: user?.email ?? "Usuario actual" };
+    const item = { ...form, description: form.description.trim(), date: new Date().toISOString(), user: user?.displayName ?? user?.email ?? "Usuario actual", userId: user?.uid ?? "", ...creationAudit(user?.uid ?? "") };
     try { const created = await addDoc(collection(db, "actividad"), item); setItems((current) => [{ ...item, id: created.id }, ...current]); setShow(false); setForm({ type: "Visita", description: "", subject: "" }); setError(""); }
     catch (saveError) { console.error("No se pudo registrar la actividad.", saveError); setError("No se pudo registrar la actividad."); }
   }

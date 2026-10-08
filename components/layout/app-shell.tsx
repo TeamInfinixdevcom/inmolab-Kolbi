@@ -20,6 +20,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     "/actividad": "actividad",
     "/mapa": "mapa",
     "/reportes": "reportes",
+    "/condominios": "condominios",
   };
   const currentModule = moduleByPath[pathname];
 

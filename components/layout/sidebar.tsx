@@ -20,6 +20,7 @@ const navigation = [
   { href: "/actividad", label: "Actividad", icon: Activity, module: "actividad" },
   { href: "/mapa", label: "Mapa", icon: Map, module: "mapa" },
   { href: "/reportes", label: "Reportes", icon: BarChart3, module: "reportes" },
+  { href: "/condominios", label: "Condominios", icon: Building2, module: "condominios" },
 ];
 
 export function Sidebar() {

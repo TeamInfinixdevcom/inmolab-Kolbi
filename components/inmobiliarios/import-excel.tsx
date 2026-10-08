@@ -6,6 +6,8 @@ import { Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { db } from "@/lib/firebase";
+import { useRBAC } from "@/components/auth/rbac-provider";
+import { creationAudit } from "@/lib/firestore-audit";
 import {
   INMOBILIARIO_COLUMNS,
   normalizeCell,
@@ -20,6 +22,7 @@ function isValidExtension(file: File) {
 }
 
 export function ImportExcel({ onComplete }: { onComplete: () => void }) {
+  const { user } = useRBAC();
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<ImportRow[]>([]);
   const [fileError, setFileError] = useState("");
@@ -111,7 +114,10 @@ export function ImportExcel({ onComplete }: { onComplete: () => void }) {
       for (let start = 0; start < latest.length; start += 500) {
         const batch = writeBatch(firestore);
         const chunk = latest.slice(start, start + 500);
-        chunk.forEach((row) => batch.set(doc(firestore, "inmobiliarios", String(row.values.ID)), row.values));
+        chunk.forEach((row) => batch.set(doc(firestore, "inmobiliarios", String(row.values.ID)), {
+          ...row.values,
+          ...creationAudit(user?.uid ?? ""),
+        }));
         await batch.commit();
         setProgress(Math.round(((start + chunk.length) / latest.length) * 100));
       }

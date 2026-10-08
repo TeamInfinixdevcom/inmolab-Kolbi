@@ -26,6 +26,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useRBAC } from "@/components/auth/rbac-provider";
 import { db } from "@/lib/firebase";
 import { hasPermission } from "@/lib/rbac";
+import { creationAudit, updateAudit } from "@/lib/firestore-audit";
 
 type PropertyStatus = "Activa" | "Inactiva";
 
@@ -66,11 +67,14 @@ type Property = {
   inmobiliarioName: string;
   createdAt?: string;
   createdBy?: string;
+<<<<<<< HEAD
   createdById?: string;
   updatedAt?: string;
   updatedBy?: string;
   updatedById?: string;
   history: HistoryEntry[];
+=======
+>>>>>>> 9d62699 (fix: finalize role permissions and condominium security)
 };
 
 type PropertyForm = Omit<
@@ -219,6 +223,7 @@ export default function PropiedadesPage() {
         return;
       }
       try {
+<<<<<<< HEAD
         const agentSnapshot = await getDocs(collection(db, "inmobiliarios"));
         const agents = agentSnapshot.docs.map((item) => ({ id: item.id, name: text(item.data().name) }));
         if (!active) return;
@@ -230,6 +235,34 @@ export default function PropiedadesPage() {
           console.error("No se pudieron cargar los condominios.", loadError);
           setError("No se pudieron cargar los condominios. Revisa la configuración y las reglas de Firestore.");
           setLoading(false);
+=======
+        const [propertySnapshot, agentSnapshot] = await Promise.all([
+          getDocs(collection(db, propertyCollection)),
+          getDocs(collection(db, "inmobiliarios")),
+        ]);
+        const agents = agentSnapshot.docs.map((item) => ({ id: item.id, name: String(item.data().name ?? "") }));
+        const loaded = propertySnapshot.docs.map((item) => {
+          const data = item.data();
+          const inmobiliarioId = String(data.inmobiliarioId ?? "");
+          return {
+            id: item.id,
+            title: String(data.title ?? ""),
+            type: String(data.type ?? "Casa"),
+            operation: data.operation === "Alquiler" ? "Alquiler" : "Venta",
+            price: Number(data.price ?? 0),
+            city: String(data.city ?? ""),
+            address: String(data.address ?? ""),
+            bedrooms: Number(data.bedrooms ?? 0),
+            bathrooms: Number(data.bathrooms ?? 0),
+            area: Number(data.area ?? 0),
+            status: data.status === "Inactiva" ? "Inactiva" : "Activa",
+            inmobiliarioId,
+            inmobiliarioName: agents.find((agent) => agent.id === inmobiliarioId)?.name ?? String(data.inmobiliarioName ?? "Sin asignar"),
+            description: String(data.description ?? ""),
+            createdAt: String(data.createdAt ?? ""),
+            createdBy: typeof data.createdBy === "string" ? data.createdBy : undefined,
+          } as Property;
+>>>>>>> 9d62699 (fix: finalize role permissions and condominium security)
         });
       } catch (loadError) {
         console.error("No se pudieron cargar los condominios.", loadError);
@@ -344,6 +377,7 @@ export default function PropiedadesPage() {
 
     try {
       if (editingId) {
+<<<<<<< HEAD
         if (!previous) throw new Error("No se encontró el condominio que se quiere actualizar.");
         const changes = changedFields(previous, form);
         const entry: HistoryEntry = {
@@ -371,6 +405,13 @@ export default function PropiedadesPage() {
           createdById: currentActor.userId,
           history: [entry],
         });
+=======
+        await updateDoc(doc(db, propertyCollection, editingId), { ...payload, ...updateAudit(user?.uid ?? "") });
+        setProperties((current) => current.map((property) => property.id === editingId ? { ...property, ...payload } : property));
+      } else {
+        const created = await addDoc(collection(db, propertyCollection), { ...payload, ...creationAudit(user?.uid ?? "") });
+        setProperties((current) => [{ ...payload, id: created.id, createdBy: user?.uid }, ...current]);
+>>>>>>> 9d62699 (fix: finalize role permissions and condominium security)
       }
       setShowForm(false);
       setEditingId(null);
@@ -396,6 +437,7 @@ export default function PropiedadesPage() {
       changes: ["Estado"],
     };
     try {
+<<<<<<< HEAD
       await updateDoc(doc(db, propertyCollection, property.id), {
         status: nextStatus,
         updatedAt: currentActor.date,
@@ -403,6 +445,11 @@ export default function PropiedadesPage() {
         updatedById: currentActor.userId,
         history: arrayUnion(entry),
       });
+=======
+      await updateDoc(doc(db, propertyCollection, property.id), { status: nextStatus, ...updateAudit(user?.uid ?? "") });
+      setProperties((current) => current.map((item) => item.id === property.id ? { ...item, status: nextStatus } : item));
+      if (selected?.id === property.id) setSelected({ ...property, status: nextStatus });
+>>>>>>> 9d62699 (fix: finalize role permissions and condominium security)
     } catch (statusError) {
       console.error("No se pudo cambiar el estado del condominio.", statusError);
       setError("No se pudo cambiar el estado. Verifica los permisos de Firestore.");
@@ -457,6 +504,7 @@ export default function PropiedadesPage() {
         </Card>
       )}
 
+<<<<<<< HEAD
       <Card>
         <CardHeader className="flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div><CardTitle>Condominios registrados</CardTitle><p className="mt-1 text-sm text-muted-foreground">{properties.length} registros</p></div>
@@ -476,6 +524,11 @@ export default function PropiedadesPage() {
           ))}</div>}
         </CardContent>
       </Card>
+=======
+      <Card><CardHeader className="flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><CardTitle>Inventario</CardTitle><p className="mt-1 text-sm text-muted-foreground">{properties.length} propiedades registradas</p></div><div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row"><div className="relative"><Search size={16} className="absolute left-3 top-2.5 text-muted-foreground" /><input aria-label="Buscar propiedades" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar propiedad..." className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-primary sm:w-52" /></div><select aria-label="Filtrar por estado" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"><option>Todas</option><option>Activa</option><option>Inactiva</option></select><select aria-label="Filtrar por operación" value={operationFilter} onChange={(event) => setOperationFilter(event.target.value as typeof operationFilter)} className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"><option>Todas</option><option>Venta</option><option>Alquiler</option></select></div></CardHeader><CardContent>
+        {loading ? <p className="py-10 text-center text-sm text-muted-foreground">Cargando propiedades...</p> : !db ? <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">Firebase aún no está conectado. Configura las variables de entorno para cargar y administrar datos reales.</p> : filteredProperties.length === 0 ? <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No hay propiedades que coincidan con los filtros.</p> : <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{filteredProperties.map((property) => { const canEditProperty = canUpdate && (role !== "AGENTE" || property.createdBy === user?.uid); return <article key={property.id} className="rounded-xl border p-4 transition-shadow hover:shadow-md"><div className="flex items-start justify-between gap-3"><div className="flex items-center gap-2"><span className="rounded-lg bg-primary/10 p-2 text-primary"><Building2 size={18} /></span><div><h2 className="font-semibold">{property.title}</h2><p className="text-xs text-muted-foreground">{property.type} · {property.operation}</p></div></div><span className={`rounded-full px-2 py-1 text-[11px] font-medium ${property.status === "Activa" ? "bg-emerald-50 text-emerald-700" : "bg-muted text-muted-foreground"}`}>{property.status}</span></div><div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground"><span className="flex items-center gap-1"><MapPin size={13} />{property.city}</span><span className="flex items-center gap-1"><Maximize2 size={13} />{property.area} m²</span><span className="flex items-center gap-1"><BedDouble size={13} />{property.bedrooms}</span><span className="flex items-center gap-1"><Bath size={13} />{property.bathrooms}</span></div><p className="mt-4 text-lg font-bold">₡{property.price.toLocaleString("es-CR")}</p><p className="mt-1 truncate text-xs text-muted-foreground">Asignada a: {property.inmobiliarioName}</p><div className="mt-4 flex gap-2 border-t pt-3"><Button variant="outline" size="sm" onClick={() => setSelected(property)}><Eye size={14} className="mr-1.5" /> Ver detalle</Button>{canEditProperty && <><Button variant="ghost" size="sm" onClick={() => openEdit(property)}><Edit3 size={14} className="mr-1.5" /> Editar</Button><Button variant="ghost" size="icon" onClick={() => void toggleStatus(property)} aria-label={property.status === "Activa" ? "Desactivar propiedad" : "Activar propiedad"}>{property.status === "Activa" ? <ToggleRight size={20} className="text-emerald-600" /> : <ToggleLeft size={20} />}</Button></>}</div></article>; })}</div>}
+      </CardContent></Card>
+>>>>>>> 9d62699 (fix: finalize role permissions and condominium security)
 
       {selected && <Card><CardHeader className="flex-row items-center justify-between"><div><CardTitle>Bitácora · {selected.condominiumName || "Condominio"}</CardTitle><p className="mt-1 text-sm text-muted-foreground">Creado por {selected.createdBy || "Sin registrar"}{selected.createdAt && ` · ${new Date(selected.createdAt).toLocaleString("es-CR")}`}</p></div><Button variant="ghost" size="icon" onClick={() => setSelected(null)} aria-label="Cerrar bitácora"><X size={18} /></Button></CardHeader><CardContent><div className="space-y-5">{selected.history.length === 0 ? <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">Este registro no tiene historial todavía.</p> : [...selected.history].sort((a, b) => b.date.localeCompare(a.date)).map((entry) => <div key={entry.id} className="flex gap-3 border-b pb-4 last:border-0"><span className="mt-1 rounded-full bg-primary/10 p-2 text-primary"><Check size={15} /></span><div className="min-w-0 flex-1"><div className="flex flex-col justify-between gap-1 sm:flex-row"><p className="font-semibold">{entry.type === "created" ? "Registro inicial" : "Actualización"}</p><time className="text-xs text-muted-foreground">{new Date(entry.date).toLocaleString("es-CR")}</time></div><p className="mt-1 text-sm">Por {entry.user || "Usuario actual"}</p>{entry.changes.length > 0 && <p className="mt-1 text-xs text-muted-foreground">Cambios: {entry.changes.join(", ")}</p>}{entry.note && <p className="mt-2 text-sm text-muted-foreground">{entry.note}</p>}{entry.observations && <p className="mt-1 text-sm text-muted-foreground">Observaciones: {entry.observations}</p>}</div></div>)}</div></CardContent></Card>}
     </section>

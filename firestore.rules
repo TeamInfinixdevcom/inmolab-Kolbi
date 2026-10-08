@@ -15,13 +15,31 @@ service cloud.firestore {
     function isSupervisor() { return role() == 'SUPERVISOR'; }
     function isAgent() { return role() == 'AGENTE'; }
     function isStaff() { return isAdmin() || isSupervisor(); }
-    function hasKeys(keys) {
-      return request.resource.data.keys().hasOnly(keys);
+    function hasRole() { return isAdmin() || isSupervisor() || isAgent(); }
+    function ownsExisting() {
+      return resource.data.createdBy == request.auth.uid;
     }
-    function owns(data) {
-      return data.inmobiliarioId == request.auth.uid
-        || data.responsibleId == request.auth.uid
-        || data.userId == request.auth.uid;
+    function createsAsSelf() {
+      return request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.updatedBy == request.auth.uid;
+    }
+    function updatesAsSelf() {
+      return request.resource.data.updatedBy == request.auth.uid;
+    }
+    function agentUpdate() {
+      return isAgent()
+        && ownsExisting()
+        && updatesAsSelf()
+        && request.resource.data.createdBy == resource.data.createdBy;
+    }
+    function assignedUserExists() {
+      return request.resource.data.assignedTo is string
+        && exists(/databases/$(database)/documents/users/$(request.resource.data.assignedTo))
+        && get(/databases/$(database)/documents/users/$(request.resource.data.assignedTo)).data.role in ['ADMIN', 'SUPERVISOR', 'AGENTE'];
+    }
+    function createdByStaff() {
+      return exists(/databases/$(database)/documents/users/$(resource.data.createdBy))
+        && get(/databases/$(database)/documents/users/$(resource.data.createdBy)).data.role in ['ADMIN', 'SUPERVISOR'];
     }
     function createdByCurrentUser(data) {
       return (data.keys().hasAll(['createdById'])
@@ -34,42 +52,86 @@ service cloud.firestore {
     }
 
     match /inmobiliarios/{id} {
-      allow read: if signedIn();
+      allow read: if hasRole();
       allow create, update, delete: if isAdmin();
     }
 
     match /propiedades/{id} {
-      allow read: if signedIn();
-      allow create: if signedIn();
-      allow update: if signedIn() && createdByCurrentUser(resource.data)
-        && preservesCreator(resource.data);
+      allow read: if hasRole();
+      allow create: if (isStaff() || isAgent()) && createsAsSelf();
+      allow update: if isStaff() && updatesAsSelf() || agentUpdate();
       allow delete: if isAdmin();
     }
 
     match /clientes/{id} {
-      allow read: if signedIn() && (isStaff() || (isAgent() && owns(resource.data)));
-      allow create: if isStaff() || (isAgent() && request.resource.data.inmobiliarioId == request.auth.uid);
-      allow update: if isStaff() || (isAgent() && owns(resource.data) && request.resource.data.inmobiliarioId == request.auth.uid);
+      allow read: if hasRole();
+      allow create: if (isStaff() || isAgent()) && createsAsSelf();
+      allow update: if isStaff() && updatesAsSelf() || agentUpdate();
       allow delete: if isAdmin();
     }
 
     match /eventos/{id} {
-      allow read: if signedIn() && (isStaff() || (isAgent() && owns(resource.data)));
-      allow create: if isStaff() || (isAgent() && request.resource.data.responsibleId == request.auth.uid);
-      allow update: if isStaff() || (isAgent() && owns(resource.data) && request.resource.data.responsibleId == request.auth.uid);
-      allow delete: if isAdmin() || (isSupervisor() && owns(resource.data));
+      allow read: if hasRole();
+      allow create: if (isStaff() || isAgent()) && createsAsSelf();
+      allow update: if isStaff() && updatesAsSelf() || agentUpdate();
+      allow delete: if isAdmin() || isSupervisor() || (isAgent() && ownsExisting());
     }
 
     match /actividad/{id} {
-      allow read: if signedIn() && (isStaff() || (isAgent() && owns(resource.data)));
-      allow create: if isStaff() || (isAgent() && request.resource.data.userId == request.auth.uid);
-      allow update: if isStaff() || (isAgent() && owns(resource.data));
+      allow read: if hasRole();
+      allow create: if (isStaff() || isAgent()) && createsAsSelf();
+      allow update: if isStaff() && updatesAsSelf() || agentUpdate();
       allow delete: if isAdmin();
     }
 
     match /reportes/{id} {
-      allow read: if signedIn() && (isAdmin() || isSupervisor() || isAgent());
+      allow read: if hasRole();
       allow write: if isAdmin();
+    }
+
+    match /users/{uid} {
+      allow read: if isAdmin();
+      allow create: if hasRole() && uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.role == role();
+      allow update: if isAdmin()
+        || (hasRole() && uid == request.auth.uid
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.role == role());
+      allow delete: if isAdmin();
+    }
+
+    match /condominios/{id} {
+      allow read: if hasRole();
+      allow create: if isAdmin()
+        && createsAsSelf()
+        && request.resource.data.createdByRole == role()
+        && assignedUserExists()
+        || (isAgent()
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.assignedTo == request.auth.uid
+          && request.resource.data.updatedBy == request.auth.uid
+          && request.resource.data.createdByRole == role());
+      allow update: if isAdmin()
+        && assignedUserExists()
+        && updatesAsSelf()
+        || (isAgent()
+          && (resource.data.createdBy == request.auth.uid
+            || (resource.data.assignedTo == request.auth.uid && createdByStaff()))
+          && request.resource.data.assignedTo == resource.data.assignedTo
+          && request.resource.data.createdBy == resource.data.createdBy
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['assignedTo', 'assignedToName', 'assignedToEmail', 'createdBy'])
+          && updatesAsSelf());
+      allow delete: if isAdmin() || (isAgent() && resource.data.createdBy == request.auth.uid);
+    }
+
+    match /condominios/{id}/historial/{entryId} {
+      allow read: if isAdmin()
+        || ((isSupervisor() || isAgent())
+          && get(/databases/$(database)/documents/condominios/$(id)).data.assignedTo == request.auth.uid);
+      allow create: if isAdmin()
+        && request.resource.data.changedBy == request.auth.uid;
+      allow update, delete: if false;
     }
 
     match /{document=**} {

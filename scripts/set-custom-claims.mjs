@@ -1,5 +1,7 @@
+import "dotenv/config";
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
+
 
 const [uid, role] = process.argv.slice(2);
 const roles = new Set(["ADMIN", "SUPERVISOR", "AGENTE"]);

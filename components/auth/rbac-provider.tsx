@@ -1,8 +1,9 @@
 "use client";
 
 import { onIdTokenChanged, type User } from "firebase/auth";
+import { doc, setDoc } from "firebase/firestore";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { roleFromClaims, type Role } from "@/lib/rbac";
 
 type RBACContextValue = {
@@ -35,7 +36,21 @@ export function RBACProvider({ children }: Readonly<{ children: React.ReactNode 
 
       try {
         const token = await nextUser.getIdTokenResult();
-        setRole(roleFromClaims(token.claims));
+        const nextRole = roleFromClaims(token.claims);
+        setRole(nextRole);
+        if (db) {
+          try {
+            await setDoc(doc(db, "users", nextUser.uid), {
+              uid: nextUser.uid,
+              email: nextUser.email ?? "",
+              displayName: nextUser.displayName ?? nextUser.email ?? "Usuario",
+              role: nextRole,
+              updatedAt: new Date().toISOString(),
+            }, { merge: true });
+          } catch (directoryError) {
+            console.error("No se pudo actualizar el directorio de usuarios.", directoryError);
+          }
+        }
       } catch (error) {
         console.error("No se pudo leer el rol del usuario.", error);
         setRole("AGENTE");

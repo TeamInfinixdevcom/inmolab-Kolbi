@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useRBAC } from "@/components/auth/rbac-provider";
 import { db } from "@/lib/firebase";
 import { hasPermission } from "@/lib/rbac";
+import { creationAudit, updateAudit } from "@/lib/firestore-audit";
 
 type ClientStatus = "Activo" | "Inactivo";
 type ClientType = "Comprador" | "Vendedor" | "Arrendatario";
@@ -24,6 +25,7 @@ type Client = {
   inmobiliarioName: string;
   notes: string;
   createdAt?: string;
+  createdBy?: string;
 };
 type PropertyOption = { id: string; title: string };
 type AgentOption = { id: string; name: string };
@@ -35,7 +37,7 @@ const emptyForm: ClientForm = {
 };
 
 export default function ClientesPage() {
-  const { role } = useRBAC();
+  const { role, user } = useRBAC();
   const canCreate = hasPermission(role, "clientes", "create");
   const canUpdate = hasPermission(role, "clientes", "update");
   const [clients, setClients] = useState<Client[]>([]);
@@ -84,6 +86,7 @@ export default function ClientesPage() {
             inmobiliarioName: loadedAgents.find((agent) => agent.id === inmobiliarioId)?.name ?? String(data.inmobiliarioName ?? "Sin asignar"),
             notes: String(data.notes ?? ""),
             createdAt: String(data.createdAt ?? ""),
+            createdBy: typeof data.createdBy === "string" ? data.createdBy : undefined,
           } as Client;
         });
         if (active) {
@@ -154,12 +157,11 @@ export default function ClientesPage() {
     };
     try {
       if (editingId) {
-        await updateDoc(doc(db, "clientes", editingId), payload);
+        await updateDoc(doc(db, "clientes", editingId), { ...payload, ...updateAudit(user?.uid ?? "") });
         setClients((current) => current.map((client) => client.id === editingId ? { ...client, ...payload } : client));
       } else {
-        const createdAt = new Date().toISOString();
-        const created = await addDoc(collection(db, "clientes"), { ...payload, createdAt });
-        setClients((current) => [{ ...payload, createdAt, id: created.id }, ...current]);
+        const created = await addDoc(collection(db, "clientes"), { ...payload, ...creationAudit(user?.uid ?? "") });
+        setClients((current) => [{ ...payload, id: created.id, createdBy: user?.uid }, ...current]);
       }
       setShowForm(false);
       setEditingId(null);
@@ -176,7 +178,7 @@ export default function ClientesPage() {
     if (!db || !canUpdate) return;
     const nextStatus: ClientStatus = client.status === "Activo" ? "Inactivo" : "Activo";
     try {
-      await updateDoc(doc(db, "clientes", client.id), { status: nextStatus });
+      await updateDoc(doc(db, "clientes", client.id), { status: nextStatus, ...updateAudit(user?.uid ?? "") });
       setClients((current) => current.map((item) => item.id === client.id ? { ...item, status: nextStatus } : item));
       if (selected?.id === client.id) setSelected({ ...client, status: nextStatus });
     } catch (statusError) {
@@ -206,7 +208,7 @@ export default function ClientesPage() {
       </form></CardContent></Card>}
 
       <Card><CardHeader className="flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><CardTitle>Clientes registrados</CardTitle><p className="mt-1 text-sm text-muted-foreground">{clients.length} clientes en total</p></div><div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row"><div className="relative"><Search size={16} className="absolute left-3 top-2.5 text-muted-foreground" /><input aria-label="Buscar clientes" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar cliente..." className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-primary sm:w-52" /></div><select aria-label="Filtrar por estado" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"><option>Todos</option><option>Activo</option><option>Inactivo</option></select><select aria-label="Filtrar por tipo" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as typeof typeFilter)} className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"><option>Todos</option><option>Comprador</option><option>Vendedor</option><option>Arrendatario</option></select></div></CardHeader><CardContent>
-        {loading ? <p className="py-10 text-center text-sm text-muted-foreground">Cargando clientes...</p> : !db ? <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">Firebase aún no está conectado. Configura las variables de entorno para cargar y administrar datos reales.</p> : filteredClients.length === 0 ? <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No hay clientes que coincidan con los filtros.</p> : <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b text-xs uppercase tracking-wider text-muted-foreground"><tr><th className="pb-3 font-medium">Cliente</th><th className="pb-3 font-medium">Contacto</th><th className="pb-3 font-medium">Asociaciones</th><th className="pb-3 font-medium">Estado</th><th className="pb-3 text-right font-medium">Acciones</th></tr></thead><tbody className="divide-y">{filteredClients.map((client) => <tr key={client.id}><td className="py-4"><div className="flex items-center gap-3"><span className="rounded-full bg-primary/10 p-2 text-primary"><UserRound size={17} /></span><div><p className="font-medium">{client.name}</p><p className="text-xs text-muted-foreground">{client.type}</p></div></div></td><td className="py-4 text-muted-foreground"><div className="space-y-1"><p className="flex items-center gap-2"><Mail size={14} />{client.email}</p><p className="flex items-center gap-2"><Phone size={14} />{client.phone}</p></div></td><td className="py-4 text-xs text-muted-foreground"><p className="flex max-w-44 items-center gap-1 truncate"><Building2 size={13} />{client.propertyTitle}</p><p className="mt-1 flex max-w-44 items-center gap-1 truncate"><UserRound size={13} />{client.inmobiliarioName}</p></td><td className="py-4"><span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${client.status === "Activo" ? "bg-emerald-50 text-emerald-700" : "bg-muted text-muted-foreground"}`}>{client.status === "Activo" && <Check size={12} />}{client.status}</span></td><td className="py-4 text-right"><div className="flex justify-end gap-1"><Button variant="outline" size="sm" onClick={() => setSelected(client)}><Eye size={14} className="mr-1.5" /> Ver</Button>{canUpdate && <><Button variant="ghost" size="icon" onClick={() => openEdit(client)} aria-label={`Editar ${client.name}`}><Edit3 size={16} /></Button><Button variant="ghost" size="icon" onClick={() => void toggleStatus(client)} aria-label={client.status === "Activo" ? "Desactivar cliente" : "Activar cliente"}>{client.status === "Activo" ? <ToggleRight size={20} className="text-emerald-600" /> : <ToggleLeft size={20} />}</Button></>}</div></td></tr>)}</tbody></table></div>}
+        {loading ? <p className="py-10 text-center text-sm text-muted-foreground">Cargando clientes...</p> : !db ? <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">Firebase aún no está conectado. Configura las variables de entorno para cargar y administrar datos reales.</p> : filteredClients.length === 0 ? <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No hay clientes que coincidan con los filtros.</p> : <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b text-xs uppercase tracking-wider text-muted-foreground"><tr><th className="pb-3 font-medium">Cliente</th><th className="pb-3 font-medium">Contacto</th><th className="pb-3 font-medium">Asociaciones</th><th className="pb-3 font-medium">Estado</th><th className="pb-3 text-right font-medium">Acciones</th></tr></thead><tbody className="divide-y">{filteredClients.map((client) => { const canEditClient = canUpdate && (role !== "AGENTE" || client.createdBy === user?.uid); return <tr key={client.id}><td className="py-4"><div className="flex items-center gap-3"><span className="rounded-full bg-primary/10 p-2 text-primary"><UserRound size={17} /></span><div><p className="font-medium">{client.name}</p><p className="text-xs text-muted-foreground">{client.type}</p></div></div></td><td className="py-4 text-muted-foreground"><div className="space-y-1"><p className="flex items-center gap-2"><Mail size={14} />{client.email}</p><p className="flex items-center gap-2"><Phone size={14} />{client.phone}</p></div></td><td className="py-4 text-xs text-muted-foreground"><p className="flex max-w-44 items-center gap-1 truncate"><Building2 size={13} />{client.propertyTitle}</p><p className="mt-1 flex max-w-44 items-center gap-1 truncate"><UserRound size={13} />{client.inmobiliarioName}</p></td><td className="py-4"><span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${client.status === "Activo" ? "bg-emerald-50 text-emerald-700" : "bg-muted text-muted-foreground"}`}>{client.status === "Activo" && <Check size={12} />}{client.status}</span></td><td className="py-4 text-right"><div className="flex justify-end gap-1"><Button variant="outline" size="sm" onClick={() => setSelected(client)}><Eye size={14} className="mr-1.5" /> Ver</Button>{canEditClient && <><Button variant="ghost" size="icon" onClick={() => openEdit(client)} aria-label={`Editar ${client.name}`}><Edit3 size={16} /></Button><Button variant="ghost" size="icon" onClick={() => void toggleStatus(client)} aria-label={client.status === "Activo" ? "Desactivar cliente" : "Activar cliente"}>{client.status === "Activo" ? <ToggleRight size={20} className="text-emerald-600" /> : <ToggleLeft size={20} />}</Button></>}</div></td></tr>; })}</tbody></table></div>}
       </CardContent></Card>
 
       {selected && <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Detalle del cliente"><Card className="max-h-[90vh] w-full max-w-xl overflow-y-auto"><CardHeader className="flex-row items-start justify-between"><div><p className="text-sm text-primary">{selected.type}</p><CardTitle className="mt-2 text-2xl">{selected.name}</CardTitle><p className="mt-2 flex items-center gap-1 text-sm text-muted-foreground"><MapPin size={15} />Cliente asociado a la operación inmobiliaria</p></div><Button variant="ghost" size="icon" onClick={() => setSelected(null)} aria-label="Cerrar detalle"><X size={18} /></Button></CardHeader><CardContent><div className="space-y-3 text-sm"><p className="flex items-center gap-2"><Mail size={16} className="text-muted-foreground" />{selected.email}</p><p className="flex items-center gap-2"><Phone size={16} className="text-muted-foreground" />{selected.phone}</p><p className="flex items-center gap-2"><Building2 size={16} className="text-muted-foreground" />Propiedad: <strong>{selected.propertyTitle}</strong></p><p className="flex items-center gap-2"><UserRound size={16} className="text-muted-foreground" />Inmobiliario: <strong>{selected.inmobiliarioName}</strong></p></div><p className="mt-6 whitespace-pre-wrap border-t pt-4 text-sm text-muted-foreground">{selected.notes || "Sin notas registradas."}</p></CardContent></Card></div>}
