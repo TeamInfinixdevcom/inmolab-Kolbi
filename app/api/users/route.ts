@@ -16,7 +16,7 @@ function errorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : "";
   if (message === "UNAUTHENTICATED") return NextResponse.json({ error: "Autenticación requerida." }, { status: 401 });
   if (message === "FORBIDDEN") return NextResponse.json({ error: "Solo ADMIN puede administrar usuarios." }, { status: 403 });
-  console.error("No se pudo administrar el usuario.", error);
+  console.error("No se pudo administrar el usuario:", error);
   return NextResponse.json({ error: "No se pudo completar la operación." }, { status: 400 });
 }
 
