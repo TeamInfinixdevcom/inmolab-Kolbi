@@ -20,6 +20,11 @@ const navigation = [
     icon: Users,
     module: "inmobiliarios",
   },
+  { href: "/propiedades", label: "Propiedades", icon: Building2, module: "propiedades" },
+  { href: "/eventos", label: "Eventos", icon: CalendarDays, module: "eventos" },
+  { href: "/actividad", label: "Actividad", icon: Activity, module: "actividad" },
+  { href: "/mapa", label: "Mapa", icon: Map, module: "mapa" },
+  { href: "/reportes", label: "Reportes", icon: BarChart3, module: "reportes" },
 ];
 
 export function Sidebar() {
