@@ -13,13 +13,13 @@ import { signOut } from "firebase/auth";
 
 const navigation = [
   { href: "/", label: "Dashboard", icon: Home, module: "dashboard" },
-  { href: "/inmobiliarios", label: "Inmobiliarios", icon: Users, module: "inmobiliarios" },
-  { href: "/propiedades", label: "Propiedades", icon: Building2, module: "propiedades" },
-  { href: "/eventos", label: "Eventos", icon: CalendarDays, module: "eventos" },
-  { href: "/actividad", label: "Actividad", icon: Activity, module: "actividad" },
-  { href: "/mapa", label: "Mapa", icon: Map, module: "mapa" },
-  { href: "/reportes", label: "Reportes", icon: BarChart3, module: "reportes" },
-  { href: "/condominios", label: "Condominios", icon: Building2, module: "condominios" },
+  {
+    href: "/inmobiliarios",
+    label: "Inmobiliarios",
+    adminLabel: "Usuarios",
+    icon: Users,
+    module: "inmobiliarios",
+  },
 ];
 
 export function Sidebar() {
@@ -47,9 +47,9 @@ export function Sidebar() {
           InmoLab <span className="text-primary">Kölbi</span>
         </Link>
         <nav className="space-y-1">
-          {visibleNavigation.map(({ href, label, icon: Icon }) => (
+          {visibleNavigation.map(({ href, label, adminLabel, icon: Icon }) => (
             <Link key={href} href={href} onClick={() => setOpen(false)} className={cn("flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground", pathname === href && "bg-primary/10 text-primary")}>
-              <Icon size={18} /> {label}
+              <Icon size={18} /> {role === "ADMIN" ? adminLabel ?? label : label}
             </Link>
           ))}
         </nav>
