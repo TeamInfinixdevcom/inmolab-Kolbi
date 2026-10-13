@@ -93,29 +93,50 @@ service cloud.firestore {
 
     match /condominios/{id} {
       allow read: if hasRole();
-      allow create: if isAdmin()
-        && createsAsSelf()
-        && request.resource.data.createdByRole == role()
-        && request.resource.data.status in ['Activa', 'Inactiva']
-        && assignedUserExists()
-        || (isAgent()
+
+      allow create: if (
+          isAdmin()
+          && createsAsSelf()
+          && request.resource.data.createdByRole == role()
+          && request.resource.data.status in ['Activa', 'Inactiva']
+          && assignedUserExists()
+        ) || (
+          isAgent()
           && request.resource.data.createdBy == request.auth.uid
           && request.resource.data.assignedTo == request.auth.uid
           && request.resource.data.updatedBy == request.auth.uid
           && request.resource.data.status in ['Activa', 'Inactiva']
-          && request.resource.data.createdByRole == role());
-      allow update: if isAdmin()
-        && assignedUserExists()
-        && updatesAsSelf()
-        || (isAgent()
-          && (resource.data.createdBy == request.auth.uid
-            || (resource.data.assignedTo == request.auth.uid && createdByStaff()))
+          && request.resource.data.createdByRole == role()
+        );
+
+      allow update: if (
+          isAdmin()
+          && assignedUserExists()
+          && updatesAsSelf()
+        ) || (
+          isAgent()
+          && resource.data.assignedTo == request.auth.uid
+          && (
+            resource.data.createdBy == request.auth.uid
+            || createdByStaff()
+          )
           && request.resource.data.assignedTo == resource.data.assignedTo
           && request.resource.data.createdBy == resource.data.createdBy
-          && (!request.resource.data.keys().hasAny(['status']) || request.resource.data.status in ['Activa', 'Inactiva'])
-          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['assignedTo', 'assignedToName', 'assignedToEmail', 'createdBy'])
-          && updatesAsSelf());
-      allow delete: if isAdmin() || (isAgent() && resource.data.createdBy == request.auth.uid);
+          && (
+            !request.resource.data.keys().hasAny(['status'])
+            || request.resource.data.status in ['Activa', 'Inactiva']
+          )
+          && !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['assignedTo', 'assignedToName', 'assignedToEmail', 'createdBy'])
+          && updatesAsSelf()
+        );
+
+      allow delete: if isAdmin()
+        || (
+          isAgent()
+          && resource.data.assignedTo == request.auth.uid
+          && resource.data.createdBy == request.auth.uid
+        );
     }
 
     match /condominios/{id}/historial/{entryId} {

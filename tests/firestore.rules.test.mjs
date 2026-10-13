@@ -119,4 +119,33 @@ test("AGENTE asignado por ADMIN puede editar, pero no reasignar, y el acceso cam
     updatedBy: "agent-b",
   }));
   await assertSucceeds(agentADatabase.doc("condominios/admin-owned").get());
+  await assertFails(
+    agentADatabase.doc("condominios/admin-owned").delete()
+  );
+});
+
+
+test("AGENTE puede consultar condominios asignados a otros agentes", async () => {
+  const adminDatabase = testEnvironment
+    .authenticatedContext("admin", { role: "ADMIN" })
+    .firestore();
+
+  const agentADatabase = testEnvironment
+    .authenticatedContext("agent-a", { role: "AGENTE" })
+    .firestore();
+
+  await assertSucceeds(
+    adminDatabase.doc("condominios/assigned-to-b").set(
+      condominium("admin", "agent-b", "ADMIN")
+    )
+  );
+
+  const snapshot = await assertSucceeds(
+    agentADatabase.collection("condominios").get()
+  );
+
+  assert.ok(
+    snapshot.docs.some((document) => document.id === "assigned-to-b"),
+    "El agente debe poder consultar un condominio asignado a otro agente"
+  );
 });
