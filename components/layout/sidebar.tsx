@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRouter } from "next/navigation";
-import { Activity, BarChart3, Building2, CalendarDays, Home, LogOut, Map, Menu, Users, X } from "lucide-react";
+import { Activity, BarChart3, Building2, CalendarDays, Home, LogOut, Map, Menu, UserRound, Users, X } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useRBAC } from "@/components/auth/rbac-provider";
@@ -24,6 +24,7 @@ const navigation = [
   { href: "/eventos", label: "Eventos", icon: CalendarDays, module: "eventos" },
   { href: "/actividad", label: "Actividad", icon: Activity, module: "actividad" },
   { href: "/mapa", label: "Mapa", icon: Map, module: "mapa" },
+  { href: "/perfil", label: "Mi perfil", icon: UserRound, module: "perfil" },
   { href: "/reportes", label: "Reportes", icon: BarChart3, module: "reportes" },
 ];
 

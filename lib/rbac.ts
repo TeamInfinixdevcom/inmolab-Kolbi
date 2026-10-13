@@ -1,7 +1,7 @@
 export const ROLES = ["ADMIN", "SUPERVISOR", "AGENTE"] as const;
 export type Role = (typeof ROLES)[number];
 
-export const MODULES = ["dashboard", "inmobiliarios", "propiedades", "clientes", "eventos", "actividad", "mapa", "reportes", "condominios"] as const;
+export const MODULES = ["dashboard", "inmobiliarios", "propiedades", "clientes", "eventos", "actividad", "mapa", "reportes", "condominios", "perfil"] as const;
 export type Module = (typeof MODULES)[number];
 
 export const ACTIONS = ["read", "create", "update", "delete", "manage"] as const;
@@ -36,6 +36,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, PermissionMap>> = {
     MODULES.flatMap((module) => ACTIONS.map((action) => `${module}:${action}` as Permission)),
   ),
   SUPERVISOR: permissionsFor([
+    "perfil:read",
     "dashboard:read",
     "inmobiliarios:read",
     "propiedades:read",
@@ -56,6 +57,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<Role, PermissionMap>> = {
     "condominios:read",
   ]),
   AGENTE: permissionsFor([
+    "perfil:read",
     "dashboard:read",
     "propiedades:read",
     "propiedades:create",
