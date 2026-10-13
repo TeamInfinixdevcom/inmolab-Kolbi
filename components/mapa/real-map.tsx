@@ -1,15 +1,15 @@
-
 "use client";
 
 import { useEffect } from "react";
 import {
-  CircleMarker,
   MapContainer,
+  Marker,
   Popup,
   TileLayer,
   useMap,
   useMapEvents,
 } from "react-leaflet";
+import L from "leaflet";
 import type { LatLngExpression } from "leaflet";
 
 export type MapMarker = {
@@ -32,6 +32,64 @@ type RealMapProps = {
 };
 
 const costaRicaCenter: LatLngExpression = [9.7489, -83.7534];
+
+function createPinIcon(emoji: string, color: string) {
+  return L.divIcon({
+    className: "inmolab-pin-container",
+    html: `
+      <div style="
+        position: relative;
+        width: 44px;
+        height: 54px;
+        filter: drop-shadow(0 3px 3px rgba(0,0,0,.30));
+      ">
+        <div style="
+          position: absolute;
+          left: 5px;
+          top: 2px;
+          width: 34px;
+          height: 34px;
+          background: ${color};
+          border: 2px solid white;
+          border-radius: 50% 50% 50% 0;
+          transform: rotate(-45deg);
+          box-shadow: inset -2px -2px 4px rgba(0,0,0,.15);
+        "></div>
+        <span style="
+          position: absolute;
+          left: 10px;
+          top: 7px;
+          width: 24px;
+          height: 24px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 17px;
+          line-height: 1;
+          background: white;
+          border-radius: 50%;
+        ">${emoji}</span>
+        <div style="
+          position: absolute;
+          bottom: 0;
+          left: 19px;
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: rgba(0,0,0,.20);
+          filter: blur(2px);
+        "></div>
+      </div>
+    `,
+    iconSize: [44, 54],
+    iconAnchor: [22, 48],
+    popupAnchor: [0, -45],
+  });
+}
+
+const propertyPin = createPinIcon("🏠", "#2563eb");
+const referencePin = createPinIcon("📍", "#7c3aed");
+const selectedPin = createPinIcon("📌", "#16a34a");
 
 function MapClickHandler({
   onMapClick,
@@ -90,51 +148,39 @@ export function RealMap({
       <MapClickHandler onMapClick={onMapClick} />
       <MapPositionController position={selectedPosition} />
 
-      {/* Propiedades existentes: se conservan sin cambios */}
+      {/* Propiedades: pin azul con casa */}
       {markers.map((marker) => (
-        <CircleMarker
+        <Marker
           key={marker.id}
-          center={[marker.latitude, marker.longitude]}
-          radius={9}
-          pathOptions={{
-            color: "#ffffff",
-            weight: 3,
-            fillColor: "#2563eb",
-            fillOpacity: 1,
-          }}
+          position={[marker.latitude, marker.longitude]}
+          icon={propertyPin}
         >
           <Popup>
             <strong>{marker.title}</strong>
             <br />
             {marker.detail}
           </Popup>
-        </CircleMarker>
+        </Marker>
       ))}
 
-      {/* Punto temporal seleccionado por el usuario */}
+      {/* Ubicación seleccionada: pin verde */}
       {selectedPosition && (
-        <CircleMarker
+        <Marker
           key={`${selectedPosition.latitude},${selectedPosition.longitude}`}
-          center={[
+          position={[
             selectedPosition.latitude,
             selectedPosition.longitude,
           ]}
-          radius={10}
-          pathOptions={{
-            color: "#ffffff",
-            weight: 3,
-            fillColor: "#16a34a",
-            fillOpacity: 1,
-          }}
+          icon={selectedPin}
         >
           <Popup>
             <strong>Ubicación seleccionada</strong>
             <br />
-            Latitud: {selectedPosition.latitude}
+            Latitud: {selectedPosition.latitude.toFixed(6)}
             <br />
-            Longitud: {selectedPosition.longitude}
+            Longitud: {selectedPosition.longitude.toFixed(6)}
           </Popup>
-        </CircleMarker>
+        </Marker>
       )}
     </MapContainer>
   );

@@ -1,4 +1,3 @@
-
 "use client";
 
 import dynamic from "next/dynamic";
@@ -6,8 +5,11 @@ import { useEffect, useMemo, useState } from "react";
 import {
   addDoc,
   collection,
+  deleteDoc,
+  doc,
   onSnapshot,
   serverTimestamp,
+  updateDoc,
 } from "firebase/firestore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -32,10 +34,7 @@ type SavedReference = MapMarker & {
 };
 
 function coordinate(value: unknown): number | undefined {
-  if (value === null || value === undefined || value === "") {
-    return undefined;
-  }
-
+  if (value === null || value === undefined || value === "") return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
 }
@@ -54,16 +53,13 @@ function parseCoordinates(value: string): MapPosition | null {
     latitude > 90 ||
     longitude < -180 ||
     longitude > 180
-  ) {
-    return null;
-  }
+  ) return null;
 
   return { latitude, longitude };
 }
 
 export default function MapaPage() {
   const { user, role, loading: authLoading } = useRBAC();
-
   const [properties, setProperties] = useState<Property[]>([]);
   const [references, setReferences] = useState<SavedReference[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,8 +70,8 @@ export default function MapaPage() {
   const [searchText, setSearchText] = useState("");
   const [referenceTitle, setReferenceTitle] = useState("");
   const [referenceDetail, setReferenceDetail] = useState("");
-  const [selectedPosition, setSelectedPosition] =
-    useState<MapPosition | null>(null);
+  const [selectedPosition, setSelectedPosition] = useState<MapPosition | null>(null);
+  const [editing, setEditing] = useState<SavedReference | null>(null);
 
   useEffect(() => {
     if (!db) {
@@ -93,15 +89,10 @@ export default function MapaPage() {
           const longitude = coordinate(data.longitude ?? data.lng);
 
           if (
-            latitude === undefined ||
-            longitude === undefined ||
-            latitude < -90 ||
-            latitude > 90 ||
-            longitude < -180 ||
-            longitude > 180
-          ) {
-            return [];
-          }
+            latitude === undefined || longitude === undefined ||
+            latitude < -90 || latitude > 90 ||
+            longitude < -180 || longitude > 180
+          ) return [];
 
           return [{
             id: item.id,
@@ -114,15 +105,12 @@ export default function MapaPage() {
             status: String(data.status ?? "Activa"),
           }];
         });
-
         setProperties(loaded);
         setLoading(false);
       },
       (loadError) => {
-        console.error("No se pudieron cargar las propiedades del mapa.", loadError);
-        setError(
-          "No se pudieron cargar las propiedades. Revisa las reglas de Firestore.",
-        );
+        console.error("Error cargando propiedades:", loadError);
+        setError("No se pudieron cargar las propiedades. Revisa Firestore.");
         setLoading(false);
       },
     );
@@ -136,15 +124,10 @@ export default function MapaPage() {
           const longitude = coordinate(data.longitude);
 
           if (
-            latitude === undefined ||
-            longitude === undefined ||
-            latitude < -90 ||
-            latitude > 90 ||
-            longitude < -180 ||
-            longitude > 180
-          ) {
-            return [];
-          }
+            latitude === undefined || longitude === undefined ||
+            latitude < -90 || latitude > 90 ||
+            longitude < -180 || longitude > 180
+          ) return [];
 
           return [{
             id: item.id,
@@ -156,15 +139,11 @@ export default function MapaPage() {
             createdByName: String(data.createdByName ?? "Usuario"),
           }];
         });
-
         setReferences(loaded);
       },
       (loadError) => {
-        console.error("No se pudieron cargar los marcadores compartidos.", loadError);
-        setError((previous) =>
-          previous ||
-          "No se pudieron cargar los marcadores. Revisa las reglas de Firestore.",
-        );
+        console.error("Error cargando marcadores:", loadError);
+        setError((previous) => previous || "No se pudieron cargar los marcadores. Revisa Firestore.");
       },
     );
 
@@ -177,32 +156,27 @@ export default function MapaPage() {
   const markers = useMemo(
     () => [
       ...properties.map(({ id, title, detail, latitude, longitude }) => ({
-        id: `property-${id}`,
-        title,
-        detail,
-        latitude,
-        longitude,
+        id: `property-${id}`, title, detail, latitude, longitude,
       })),
       ...references.map(({ id, title, detail, latitude, longitude }) => ({
-        id: `reference-${id}`,
-        title: `Referencia: ${title}`,
-        detail,
-        latitude,
-        longitude,
+        id: `reference-${id}`, title: `Referencia: ${title}`, detail, latitude, longitude,
       })),
     ],
     [properties, references],
   );
 
+  function canManage(reference: SavedReference) {
+    return Boolean(user) && (role === "ADMIN" || reference.createdBy === user?.uid);
+  }
+
   async function findLocation() {
     setError("");
     setNotice("");
-
     const coordinates = parseCoordinates(searchText);
 
     if (coordinates) {
       setSelectedPosition(coordinates);
-      setNotice("Coordenadas encontradas. Podés guardar este punto de referencia.");
+      setNotice("Coordenadas encontradas. Podés guardar este punto.");
       return;
     }
 
@@ -212,70 +186,79 @@ export default function MapaPage() {
     }
 
     setSearching(true);
-
     try {
       const url = new URL("https://nominatim.openstreetmap.org/search");
       url.searchParams.set("q", searchText.trim());
       url.searchParams.set("format", "jsonv2");
       url.searchParams.set("limit", "1");
       url.searchParams.set("countrycodes", "cr");
-
       const response = await fetch(url.toString());
-
-      if (!response.ok) {
-        throw new Error("Falló el servicio de búsqueda.");
-      }
+      if (!response.ok) throw new Error("Falló el servicio de búsqueda.");
 
       const results = (await response.json()) as Array<{
-        lat: string;
-        lon: string;
-        display_name: string;
+        lat: string; lon: string; display_name: string;
       }>;
 
-      if (results.length === 0) {
-        setError(
-          "No encontramos ese lugar en Costa Rica. Probá otra dirección o pegá las coordenadas.",
-        );
+      if (!results.length) {
+        setError("No encontramos ese lugar en Costa Rica. Probá otra dirección o coordenadas.");
         return;
       }
 
-      const latitude = Number(results[0].lat);
-      const longitude = Number(results[0].lon);
-
-      setSelectedPosition({ latitude, longitude });
+      setSelectedPosition({
+        latitude: Number(results[0].lat),
+        longitude: Number(results[0].lon),
+      });
       setSearchText(results[0].display_name);
-      setNotice("Lugar encontrado. Podés guardar este punto de referencia.");
+      setNotice("Lugar encontrado. Podés guardar este punto.");
     } catch (searchError) {
-      console.error("Error al buscar ubicación.", searchError);
-      setError(
-        "Falló la búsqueda. Podés pegar las coordenadas o seleccionar un punto en el mapa.",
-      );
+      console.error("Error buscando ubicación:", searchError);
+      setError("Falló la búsqueda. Probá pegando coordenadas o seleccionando el mapa.");
     } finally {
       setSearching(false);
     }
   }
 
+  function startEditing(reference: SavedReference) {
+    if (!canManage(reference)) return;
+    setEditing(reference);
+    setReferenceTitle(reference.title);
+    setReferenceDetail(reference.detail);
+    setSelectedPosition({
+      latitude: reference.latitude,
+      longitude: reference.longitude,
+    });
+    setSearchText("");
+    setError("");
+    setNotice("Editando marcador. Buscá otra ubicación o seleccioná un punto en el mapa para moverlo.");
+  }
+
+  function cancelEditing() {
+    setEditing(null);
+    setReferenceTitle("");
+    setReferenceDetail("");
+    setSelectedPosition(null);
+    setSearchText("");
+    setError("");
+    setNotice("Edición cancelada.");
+  }
+
   async function saveReference() {
     if (!db || !auth || !user) {
-      setError("Iniciá sesión para guardar un punto de referencia.");
+      setError("Iniciá sesión para guardar un marcador.");
       return;
     }
-
     if (auth.currentUser?.uid !== user.uid) {
       setError("La sesión cambió. Actualizá la página e intentá de nuevo.");
       return;
     }
-
     if (!selectedPosition) {
       setError("Primero buscá o seleccioná una ubicación en el mapa.");
       return;
     }
-
     if (!referenceTitle.trim()) {
-      setError("Escribí un nombre para el punto de referencia.");
+      setError("Escribí un nombre para el marcador.");
       return;
     }
-
     if (!["ADMIN", "SUPERVISOR", "AGENTE"].includes(role)) {
       setError("Tu rol no tiene permiso para guardar marcadores.");
       return;
@@ -286,30 +269,68 @@ export default function MapaPage() {
     setNotice("");
 
     try {
-      await addDoc(collection(db, "mapa_marcadores"), {
+      const data = {
         title: referenceTitle.trim(),
         detail: referenceDetail.trim(),
         latitude: selectedPosition.latitude,
         longitude: selectedPosition.longitude,
-        createdBy: user.uid,
-        createdByName: user.displayName ?? user.email ?? "Usuario",
-        createdAt: serverTimestamp(),
-      });
+      };
 
+      if (editing) {
+        if (!canManage(editing)) {
+          setError("No tenés permiso para editar este marcador.");
+          return;
+        }
+
+        await updateDoc(doc(db, "mapa_marcadores", editing.id), data);
+        setNotice("Marcador actualizado correctamente.");
+      } else {
+        await addDoc(collection(db, "mapa_marcadores"), {
+          ...data,
+          createdBy: user.uid,
+          createdByName: user.displayName ?? user.email ?? "Usuario",
+          createdAt: serverTimestamp(),
+        });
+        setNotice("Marcador guardado y compartido con los usuarios autorizados.");
+      }
+
+      setEditing(null);
       setReferenceTitle("");
       setReferenceDetail("");
       setSearchText("");
       setSelectedPosition(null);
-      setNotice("Punto de referencia guardado y compartido con los usuarios autorizados.");
     } catch (saveError) {
-      console.error("No se pudo guardar el punto de referencia.", saveError);
-      setError(
-        "No se pudo guardar. Verificá las reglas de Firestore para mapa_marcadores.",
-      );
+      console.error("No se pudo guardar el marcador:", saveError);
+      setError("No se pudo guardar. Revisá tus permisos de Firestore.");
     } finally {
       setSaving(false);
     }
   }
+
+  async function removeReference(reference: SavedReference) {
+    if (!db || !user || !canManage(reference)) {
+      setError("No tenés permiso para eliminar este marcador.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `¿Eliminar el marcador "${reference.title}"? Esta acción no se puede deshacer.`,
+    );
+    if (!confirmed) return;
+
+    setError("");
+    setNotice("");
+    try {
+      await deleteDoc(doc(db, "mapa_marcadores", reference.id));
+      if (editing?.id === reference.id) cancelEditing();
+      setNotice("Marcador eliminado.");
+    } catch (deleteError) {
+      console.error("No se pudo eliminar el marcador:", deleteError);
+      setError("No se pudo eliminar. Revisá tus permisos de Firestore.");
+    }
+  }
+
+  const inputClass = "h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm";
 
   return (
     <section className="space-y-6">
@@ -317,64 +338,41 @@ export default function MapaPage() {
         <p className="text-sm font-medium text-primary">Ubicaciones de referencia</p>
         <h1 className="mt-2 text-3xl font-bold">Mapa de Costa Rica</h1>
         <p className="mt-2 text-muted-foreground">
-          Consultá propiedades y guardá ubicaciones sin crear propiedades duplicadas.
+          Consultá propiedades y compartí ubicaciones sin crear propiedades duplicadas.
         </p>
       </header>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Buscar ubicación</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle>Buscar ubicación</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           <form
             className="flex flex-col gap-2 sm:flex-row"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void findLocation();
-            }}
+            onSubmit={(event) => { event.preventDefault(); void findLocation(); }}
           >
             <input
               value={searchText}
               onChange={(event) => setSearchText(event.target.value)}
-              placeholder="Ej. 9.989623734141432, -84.14770970478676"
+              placeholder="Coordenadas o dirección en Costa Rica"
               aria-label="Dirección o coordenadas"
-              className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              className={inputClass}
             />
             <Button type="submit" disabled={searching}>
               {searching ? "Buscando..." : "Buscar"}
             </Button>
           </form>
-
           <p className="text-sm text-muted-foreground">
-            Pegá coordenadas de Google Maps, escribí una dirección de Costa Rica
-            o seleccioná un punto directamente en el mapa.
+            Pegá coordenadas de Google Maps, escribí una dirección o seleccioná un punto directamente en el mapa.
           </p>
 
           {selectedPosition && (
             <div className="rounded-md border p-3 text-sm">
               <p className="font-medium">Ubicación seleccionada</p>
-              <p>Latitud: {selectedPosition.latitude}</p>
-              <p>Longitud: {selectedPosition.longitude}</p>
+              <p>Latitud: {selectedPosition.latitude.toFixed(6)}</p>
+              <p>Longitud: {selectedPosition.longitude.toFixed(6)}</p>
             </div>
           )}
-
-          {error && (
-            <div
-              role="alert"
-              className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-            >
-              {error}
-            </div>
-          )}
-
-          {notice && (
-            <div
-              role="status"
-              className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"
-            >
-              {notice}
-            </div>
-          )}
+          {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+          {notice && <div role="status" className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{notice}</div>}
         </CardContent>
       </Card>
 
@@ -386,7 +384,9 @@ export default function MapaPage() {
               selectedPosition={selectedPosition}
               onMapClick={(position) => {
                 setSelectedPosition(position);
-                setNotice("Punto seleccionado en el mapa.");
+                setNotice(editing
+                  ? "Nueva ubicación seleccionada para el marcador."
+                  : "Punto seleccionado en el mapa.");
                 setError("");
               }}
             />
@@ -396,7 +396,7 @@ export default function MapaPage() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Guardar punto de referencia</CardTitle>
+              <CardTitle>{editing ? "Editar marcador" : "Guardar punto de referencia"}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <input
@@ -405,46 +405,42 @@ export default function MapaPage() {
                 placeholder="Nombre del punto"
                 maxLength={100}
                 aria-label="Nombre del punto"
-                className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className={inputClass}
               />
-
-              <input
+              <textarea
                 value={referenceDetail}
                 onChange={(event) => setReferenceDetail(event.target.value)}
                 placeholder="Descripción (opcional)"
                 maxLength={300}
                 aria-label="Descripción del punto"
-                className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                rows={3}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
-
               <Button
                 className="w-full"
                 onClick={() => void saveReference()}
                 disabled={saving || authLoading || !selectedPosition || !user}
               >
-                {saving ? "Guardando..." : "Guardar marcador"}
+                {saving ? "Guardando..." : editing ? "Guardar cambios" : "Guardar marcador"}
               </Button>
-
+              {editing && (
+                <Button variant="outline" className="w-full" onClick={cancelEditing}>
+                  Cancelar edición
+                </Button>
+              )}
               <p className="text-xs text-muted-foreground">
-                El marcador se guarda por separado de las propiedades y queda
-                asociado a tu usuario.
+                Los marcadores son independientes de las propiedades y se comparten con los usuarios autorizados.
               </p>
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle>Propiedades ubicadas</CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle>Propiedades ubicadas</CardTitle></CardHeader>
             <CardContent>
               {loading ? (
-                <p className="py-4 text-center text-sm text-muted-foreground">
-                  Cargando propiedades...
-                </p>
+                <p className="py-4 text-center text-sm text-muted-foreground">Cargando propiedades...</p>
               ) : properties.length === 0 ? (
-                <p className="py-4 text-center text-sm text-muted-foreground">
-                  Aún no hay propiedades con coordenadas.
-                </p>
+                <p className="py-4 text-center text-sm text-muted-foreground">Aún no hay propiedades con coordenadas.</p>
               ) : (
                 <div className="max-h-56 space-y-3 overflow-y-auto">
                   {properties.map((property) => (
@@ -452,20 +448,11 @@ export default function MapaPage() {
                       type="button"
                       key={property.id}
                       className="w-full rounded-md border p-3 text-left hover:bg-muted"
-                      onClick={() =>
-                        setSelectedPosition({
-                          latitude: property.latitude,
-                          longitude: property.longitude,
-                        })
-                      }
+                      onClick={() => setSelectedPosition({ latitude: property.latitude, longitude: property.longitude })}
                     >
                       <p className="font-medium">{property.title}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {property.address || property.city || property.detail}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {property.status}
-                      </p>
+                      <p className="text-sm text-muted-foreground">{property.address || property.city || property.detail}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{property.status}</p>
                     </button>
                   ))}
                 </div>
@@ -474,38 +461,44 @@ export default function MapaPage() {
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle>Marcadores compartidos ({references.length})</CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle>Marcadores compartidos ({references.length})</CardTitle></CardHeader>
             <CardContent>
               {references.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Aún no hay puntos de referencia guardados.
-                </p>
+                <p className="text-sm text-muted-foreground">Aún no hay puntos de referencia guardados.</p>
               ) : (
-                <div className="max-h-56 space-y-3 overflow-y-auto">
+                <div className="max-h-96 space-y-3 overflow-y-auto">
                   {references.map((reference) => (
-                    <button
-                      type="button"
-                      key={reference.id}
-                      className="w-full rounded-md border p-3 text-left hover:bg-muted"
-                      onClick={() =>
-                        setSelectedPosition({
-                          latitude: reference.latitude,
-                          longitude: reference.longitude,
-                        })
-                      }
-                    >
-                      <p className="font-medium">{reference.title}</p>
-                      {reference.detail && (
-                        <p className="text-sm text-muted-foreground">
-                          {reference.detail}
-                        </p>
+                    <div key={reference.id} className="rounded-md border p-3">
+                      <button
+                        type="button"
+                        className="w-full text-left hover:text-primary"
+                        onClick={() => setSelectedPosition({ latitude: reference.latitude, longitude: reference.longitude })}
+                      >
+                        <p className="font-medium">{reference.title}</p>
+                        {reference.detail && <p className="text-sm text-muted-foreground">{reference.detail}</p>}
+                        <p className="mt-1 text-xs text-muted-foreground">Guardado por {reference.createdByName}</p>
+                      </button>
+                      {canManage(reference) && (
+                        <div className="mt-3 flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1"
+                            onClick={() => startEditing(reference)}
+                          >
+                            Editar
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1"
+                            onClick={() => void removeReference(reference)}
+                          >
+                            Eliminar
+                          </Button>
+                        </div>
                       )}
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Guardado por {reference.createdByName}
-                      </p>
-                    </button>
+                    </div>
                   ))}
                 </div>
               )}
