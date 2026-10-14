@@ -6,7 +6,7 @@ import {
   Environment,
   OrbitControls,
 } from "@react-three/drei";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import {
   HAIR_COLORS,
   SHIRT_COLORS,
@@ -98,6 +98,39 @@ export default function MiiAvatar3D({
 }: Props) {
   const config = appearance ?? defaultMiiAppearance(seed);
   const [webglFailed, setWebglFailed] = useState(false);
+  const [webglChecked, setWebglChecked] = useState(false);
+
+  useEffect(() => {
+    let available = false;
+
+    try {
+      const canvas = document.createElement("canvas");
+      const context =
+        canvas.getContext("webgl2") as WebGL2RenderingContext | null ??
+        canvas.getContext("webgl") as WebGLRenderingContext | null;
+
+      available = Boolean(context);
+
+      const loseContext = context?.getExtension("WEBGL_lose_context");
+      loseContext?.loseContext();
+    } catch {
+      available = false;
+    }
+
+    setWebglFailed(!available);
+    setWebglChecked(true);
+  }, []);
+
+  if (!webglChecked) {
+    return (
+      <div
+        style={{ width: size, height: size, maxWidth: "100%" }}
+        aria-label="Cargando avatar"
+      >
+        <MiiAvatar seed={seed} size={size} appearance={config} />
+      </div>
+    );
+  }
 
   if (webglFailed) {
     return (
@@ -121,17 +154,6 @@ export default function MiiAvatar3D({
         dpr={[1, 1.5]}
         camera={{ position: [0, 0.1, 4.1], fov: 35 }}
         gl={{ alpha: true, antialias: true }}
-        fallback={
-          <MiiAvatar seed={seed} size={size} appearance={config} />
-        }
-        onCreated={({ gl }) => {
-          gl.domElement.addEventListener(
-            "webglcontextcreationerror",
-            () => setWebglFailed(true),
-            { once: true },
-          );
-        }}
-        onError={() => setWebglFailed(true)}
       >
         <ambientLight intensity={1.5} />
         <directionalLight position={[3, 4, 5]} intensity={2.2} castShadow />
