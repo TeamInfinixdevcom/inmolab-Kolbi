@@ -6,12 +6,14 @@ const APPEARANCE_LIMITS = {
   skinTone: 4,
   hairColor: 4,
   shirtColor: 4,
+  hairStyle: 3,
 } as const;
 
 type AvatarAppearance = {
   skinTone: number;
   hairColor: number;
   shirtColor: number;
+  hairStyle: number;
 };
 
 function isValidAppearance(value: unknown): value is AvatarAppearance {
@@ -75,3 +77,47 @@ export async function PUT(request: Request) {
     );
   }
 }
+
+export async function GET(request: Request) {
+  try {
+    const { token } = await requireServerRole(request);
+    const snapshot = await adminDb()
+      .collection("inmobiliarios")
+      .doc(token.uid)
+      .get();
+
+    const storedAppearance = snapshot.data()?.avatarConfig;
+    const appearance = storedAppearance && typeof storedAppearance === "object"
+      ? { hairStyle: 0, ...(storedAppearance as Record<string, unknown>) }
+      : storedAppearance;
+
+    return NextResponse.json({
+      appearance: isValidAppearance(appearance) ? appearance : null,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+
+    if (message === "UNAUTHENTICATED") {
+      return NextResponse.json(
+        { error: "Autenticación requerida." },
+        { status: 401 },
+      );
+    }
+
+    if (message === "FORBIDDEN") {
+      return NextResponse.json(
+        { error: "No tenés permiso para consultar el avatar." },
+        { status: 403 },
+      );
+    }
+
+    console.error("No se pudo cargar el avatar:", error);
+
+    return NextResponse.json(
+      { error: "No se pudo cargar el avatar." },
+      { status: 500 },
+    );
+  }
+}
+
+
