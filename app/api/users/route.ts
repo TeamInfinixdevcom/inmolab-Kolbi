@@ -20,6 +20,19 @@ function errorResponse(error: unknown) {
   return NextResponse.json({ error: "No se pudo completar la operación." }, { status: 400 });
 }
 
+function defaultAvatar(uid: string) {
+  let seed = 0;
+  for (let index = 0; index < uid.length; index += 1) {
+    seed = (seed * 31 + uid.charCodeAt(index)) | 0;
+  }
+  seed = Math.abs(seed);
+  return {
+    skinTone: seed % 4,
+    hairColor: (seed * 3) % 4,
+    shirtColor: (seed * 7) % 4,
+  };
+}
+
 function publicUser(user: { uid: string; email?: string; displayName?: string; disabled: boolean; customClaims?: Record<string, unknown> }) {
   return {
     uid: user.uid,
@@ -64,6 +77,7 @@ export async function POST(request: Request) {
       status: "Activo",
       role: body.role,
       authUid: authUser.uid,
+      avatarConfig: defaultAvatar(authUser.uid),
       createdAt: new Date().toISOString(),
     });
     return NextResponse.json({ user: publicUser({ ...authUser, customClaims: { role: body.role } }) }, { status: 201 });
@@ -112,3 +126,4 @@ export async function DELETE(request: Request) {
     return errorResponse(error);
   }
 }
+

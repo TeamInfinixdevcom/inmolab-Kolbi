@@ -7,6 +7,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
   onSnapshot,
   serverTimestamp,
   updateDoc,
@@ -26,6 +27,8 @@ type Property = MapMarker & {
   city: string;
   address: string;
   status: string;
+  inmobiliarioId: string;
+  inmobiliarioName: string;
 };
 
 type SavedReference = MapMarker & {
@@ -61,6 +64,7 @@ function parseCoordinates(value: string): MapPosition | null {
 export default function MapaPage() {
   const { user, role, loading: authLoading } = useRBAC();
   const [properties, setProperties] = useState<Property[]>([]);
+  const [inmobiliarioAvatars, setInmobiliarioAvatars] = useState<Record<string, { skinTone: number; hairColor: number; shirtColor: number; hairStyle: number }>>({});
   const [references, setReferences] = useState<SavedReference[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -79,6 +83,43 @@ export default function MapaPage() {
       setError("Firebase no está configurado.");
       return;
     }
+
+    const firestore = db;
+    if (!firestore) return;
+
+    const loadInmobiliarioAvatars = async () => {
+      try {
+        const snapshot = await getDocs(collection(firestore, "inmobiliarios"));
+        const avatars: Record<string, { skinTone: number; hairColor: number; shirtColor: number; hairStyle: number }> = {};
+
+        snapshot.docs.forEach((item) => {
+          const data = item.data();
+          const appearance = data.avatarConfig;
+          if (
+            appearance &&
+            Number.isInteger(appearance.skinTone) &&
+            appearance.skinTone >= 0 && appearance.skinTone <= 3 &&
+            Number.isInteger(appearance.hairColor) &&
+            appearance.hairColor >= 0 && appearance.hairColor <= 3 &&
+            Number.isInteger(appearance.shirtColor) &&
+            appearance.shirtColor >= 0 && appearance.shirtColor <= 3
+          ) {
+            avatars[item.id] = {
+              skinTone: appearance.skinTone,
+              hairColor: appearance.hairColor,
+              shirtColor: appearance.shirtColor,
+          hairStyle: Number.isInteger(appearance.hairStyle) && appearance.hairStyle >= 0 && appearance.hairStyle <= 2 ? appearance.hairStyle : 0,
+            };
+          }
+        });
+
+        setInmobiliarioAvatars(avatars);
+      } catch (loadError) {
+        console.error("Error cargando avatares de inmobiliarios:", loadError);
+      }
+    };
+
+    void loadInmobiliarioAvatars();
 
     const unsubscribeProperties = onSnapshot(
       collection(db, "propiedades"),
@@ -103,6 +144,8 @@ export default function MapaPage() {
             city: String(data.city ?? ""),
             address: String(data.address ?? ""),
             status: String(data.status ?? "Activa"),
+            inmobiliarioId: String(data.inmobiliarioId ?? ""),
+            inmobiliarioName: String(data.inmobiliarioName ?? ""),
           }];
         });
         setProperties(loaded);
@@ -155,14 +198,14 @@ export default function MapaPage() {
 
   const markers = useMemo(
     () => [
-      ...properties.map(({ id, title, detail, latitude, longitude }) => ({
-        id: `property-${id}`, title, detail, latitude, longitude,
+      ...properties.map(({ id, title, detail, latitude, longitude, inmobiliarioId, inmobiliarioName }) => ({
+        id: `property-${id}`, title, detail, latitude, longitude, inmobiliarioId, inmobiliarioName, avatarConfig: inmobiliarioAvatars[inmobiliarioId],
       })),
       ...references.map(({ id, title, detail, latitude, longitude }) => ({
         id: `reference-${id}`, title: `Referencia: ${title}`, detail, latitude, longitude,
       })),
     ],
-    [properties, references],
+    [properties, references, inmobiliarioAvatars],
   );
 
   function canManage(reference: SavedReference) {
@@ -509,3 +552,14 @@ export default function MapaPage() {
     </section>
   );
 }
+
+
+
+
+
+
+
+
+
+
+

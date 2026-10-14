@@ -21,10 +21,17 @@ export const SHIRT_COLORS = [
   { label: "Rojo", value: "#be123c" },
 ] as const;
 
+export const HAIR_STYLES = [
+  { label: "Clásico", value: 0 },
+  { label: "Puntiagudo", value: 1 },
+  { label: "Largo", value: 2 },
+] as const;
+
 export type MiiAppearance = {
   skinTone: number;
   hairColor: number;
   shirtColor: number;
+  hairStyle: number;
 };
 
 export function defaultMiiAppearance(seed: number): MiiAppearance {
@@ -32,6 +39,7 @@ export function defaultMiiAppearance(seed: number): MiiAppearance {
     skinTone: Math.abs(seed) % SKIN_TONES.length,
     hairColor: Math.abs(seed * 3) % HAIR_COLORS.length,
     shirtColor: Math.abs(seed * 7) % SHIRT_COLORS.length,
+    hairStyle: 0,
   };
 }
 
@@ -54,6 +62,7 @@ export function MiiAvatar({
     ?? HAIR_COLORS[defaults.hairColor].value;
   const shirt = SHIRT_COLORS[appearance?.shirtColor ?? defaults.shirtColor]?.value
     ?? SHIRT_COLORS[defaults.shirtColor].value;
+  const hairStyle = appearance?.hairStyle ?? defaults.hairStyle;
 
   return (
     <svg
@@ -85,7 +94,13 @@ export function MiiAvatar({
       <path d="M43 47 Q43 20 80 20 Q117 20 117 47 L113 88 Q108 116 80 120 Q52 116 47 88Z" fill={skin} />
       <path d="M43 47 Q43 20 80 20 Q117 20 117 47 L113 88 Q108 116 80 120 Q52 116 47 88Z" fill={`url(#face-${seed})`} />
 
-      <path d="M42 58 Q29 23 62 13 Q88 4 109 20 Q129 33 117 61 L109 45 Q93 35 78 37 Q59 37 48 53Z" fill={hair} />
+      {hairStyle === 1 ? (
+        <path d="M42 58 L29 28 L48 34 L48 12 L67 25 L80 5 L91 25 L112 14 L110 35 L130 29 L117 61 L109 45 Q93 35 78 37 Q59 37 48 53Z" fill={hair} />
+      ) : hairStyle === 2 ? (
+        <path d="M42 58 Q29 23 62 13 Q88 4 109 20 Q129 33 117 61 L117 105 Q110 121 104 96 L109 45 Q93 35 78 37 Q59 37 48 53 L49 96 Q43 116 38 96Z" fill={hair} />
+      ) : (
+        <path d="M42 58 Q29 23 62 13 Q88 4 109 20 Q129 33 117 61 L109 45 Q93 35 78 37 Q59 37 48 53Z" fill={hair} />
+      )}
       <path d="M44 49 Q61 36 78 38 Q98 36 114 49 L111 61 Q103 49 94 49 Q75 44 53 57 L48 70Z" fill={hair} />
 
       <ellipse cx="62" cy="70" rx="11" ry="13" fill="#ffffff" />
@@ -107,3 +122,7 @@ export function MiiAvatar({
     </svg>
   );
 }
+
+
+
+
