@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { useRBAC } from "@/components/auth/rbac-provider";
 import {
   MiiAvatar,
@@ -11,6 +12,19 @@ import {
   SHIRT_COLORS,
   type MiiAppearance,
 } from "@/components/avatar/mii-avatar";
+
+const MiiAvatar3D = dynamic(
+  () => import("@/components/avatar/mii-avatar-3d"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-[180px] w-[180px] items-center justify-center text-sm text-muted-foreground">
+        Cargando avatar 3D...
+      </div>
+    ),
+  },
+);
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -206,10 +220,11 @@ export default function PerfilPage() {
         <CardContent className="space-y-6">
           <div className="flex flex-col items-center gap-4 rounded-xl border bg-muted/20 p-4 sm:flex-row sm:items-start">
             <div className="rounded-2xl border bg-background p-3">
-              <MiiAvatar
+              <MiiAvatar3D
                 seed={seed}
                 size={180}
                 appearance={currentAppearance}
+                interactive
               />
             </div>
             <div className="space-y-2 text-center sm:pt-5 sm:text-left">
