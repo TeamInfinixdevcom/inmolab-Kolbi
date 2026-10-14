@@ -4,12 +4,19 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { Activity, BarChart3, Building2, CalendarDays, Home, LogOut, Map, Menu, UserRound, Users, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useRBAC } from "@/components/auth/rbac-provider";
 import { canAccessModule, type Module } from "@/lib/rbac";
 import { auth } from "@/lib/firebase";
 import { signOut } from "firebase/auth";
+
+import {
+  MiiAvatar,
+  defaultMiiAppearance,
+  type MiiAppearance,
+} from "@/components/avatar/mii-avatar";
+
 
 const navigation = [
   { href: "/", label: "Dashboard", icon: Home, module: "dashboard" },
@@ -31,7 +38,64 @@ const navigation = [
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { role } = useRBAC();
+  const { role, user } = useRBAC();
+  const [avatarAppearance, setAvatarAppearance] = useState<MiiAppearance | null>(null);
+
+  useEffect(() => {
+    if (!user) {
+      setAvatarAppearance(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadAvatar() {
+      try {
+        const token = await user!.getIdToken();
+        const response = await fetch("/api/avatar", {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+
+        if (!response.ok) return;
+
+        const result = await response.json();
+        const appearance = result.appearance;
+
+        if (
+          !cancelled &&
+          appearance &&
+          Number.isInteger(appearance.skinTone) &&
+          appearance.skinTone >= 0 &&
+          appearance.skinTone < 4 &&
+          Number.isInteger(appearance.hairColor) &&
+          appearance.hairColor >= 0 &&
+          appearance.hairColor < 4 &&
+          Number.isInteger(appearance.shirtColor) &&
+          appearance.shirtColor >= 0 &&
+          appearance.shirtColor < 4 &&
+          Number.isInteger(appearance.hairStyle ?? 0) &&
+          (appearance.hairStyle ?? 0) >= 0 &&
+          (appearance.hairStyle ?? 0) < 3
+        ) {
+          setAvatarAppearance({
+            skinTone: appearance.skinTone,
+            hairColor: appearance.hairColor,
+            shirtColor: appearance.shirtColor,
+            hairStyle: appearance.hairStyle ?? 0,
+          });
+        }
+      } catch {
+        // Si falla la consulta, se mantiene el icono genérico.
+      }
+    }
+
+    void loadAvatar();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
   const [open, setOpen] = useState(false);
   const visibleNavigation = navigation.filter(({ module }) => canAccessModule(role, module as Module));
 
@@ -55,7 +119,18 @@ export function Sidebar() {
         <nav className="space-y-1">
           {visibleNavigation.map(({ href, label, adminLabel, icon: Icon }) => (
             <Link key={href} href={href} onClick={() => setOpen(false)} className={cn("flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground", pathname === href && "bg-primary/10 text-primary")}>
-              <Icon size={18} /> {role === "ADMIN" ? adminLabel ?? label : label}
+              {href === "/perfil" && user ? (
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border bg-background">
+                  <MiiAvatar
+                    seed={Array.from(user.uid).reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) | 0, 0)}
+                    size={28}
+                    appearance={avatarAppearance ?? defaultMiiAppearance(1)}
+                  />
+                </span>
+              ) : (
+                <Icon size={18} />
+              )}
+              {role === "ADMIN" ? adminLabel ?? label : label}
             </Link>
           ))}
         </nav>
