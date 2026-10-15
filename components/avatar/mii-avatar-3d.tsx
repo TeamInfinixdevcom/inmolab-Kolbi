@@ -24,6 +24,8 @@ type Props = {
 };
 
 function Character({ appearance }: { appearance: MiiAppearance }) {
+  const isFemale = appearance.gender === "female";
+
   const skin =
     SKIN_TONES[appearance.skinTone]?.value ?? SKIN_TONES[0].value;
   const hair =
@@ -54,6 +56,18 @@ function Character({ appearance }: { appearance: MiiAppearance }) {
         />
         <meshStandardMaterial color={hair} roughness={0.82} />
       </mesh>
+            {isFemale && (
+        <>
+          <mesh position={[-0.48, -0.05, 0.015]} castShadow>
+            <capsuleGeometry args={[0.13, 0.55, 8, 16]} />
+            <meshStandardMaterial color={hair} roughness={0.82} />
+          </mesh>
+          <mesh position={[0.48, -0.05, 0.015]} castShadow>
+            <capsuleGeometry args={[0.13, 0.55, 8, 16]} />
+            <meshStandardMaterial color={hair} roughness={0.82} />
+          </mesh>
+        </>
+      )}
 
       <mesh position={[0, 0.57, 0.37]} rotation={[-0.12, 0, 0]} castShadow>
         <sphereGeometry args={[0.43, 32, 20, 0, Math.PI, 0, Math.PI * 0.52]} />
