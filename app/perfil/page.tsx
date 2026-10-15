@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { useRBAC } from "@/components/auth/rbac-provider";
 import {
   MiiAvatar,
+  MII_GENDERS,
   defaultMiiAppearance,
   SKIN_TONES,
   HAIR_COLORS,
@@ -253,6 +254,21 @@ export default function PerfilPage() {
           </div>
 
           <div className="space-y-3">
+            <h3 className="font-semibold">Tipo de avatar</h3>
+            <div className="flex flex-wrap gap-3">
+              {MII_GENDERS.map((option) => (
+                <Button
+                  key={option.value}
+                  type="button"
+                  variant={(currentAppearance.gender ?? "male") === option.value ? "default" : "outline"}
+                  aria-pressed={(currentAppearance.gender ?? "male") === option.value}
+                  disabled={saveStatus === "saving" || saveStatus === "loading"}
+                  onClick={() => updateAppearance({ ...currentAppearance, gender: option.value })}
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
             <h3 className="font-semibold">Tono de piel</h3>
             <div className="flex flex-wrap gap-3">
               {SKIN_TONES.map((option, index) => (
@@ -392,11 +408,3 @@ export default function PerfilPage() {
     </section>
   );
 }
-
-
-
-
-
-
-
-

@@ -27,7 +27,15 @@ export const HAIR_STYLES = [
   { label: "Largo", value: 2 },
 ] as const;
 
+export const MII_GENDERS = [
+  { label: "Masculino", value: "male" },
+  { label: "Femenino", value: "female" },
+] as const;
+
+export type MiiGender = "male" | "female";
+
 export type MiiAppearance = {
+  gender?: MiiGender;
   skinTone: number;
   hairColor: number;
   shirtColor: number;
@@ -40,6 +48,7 @@ export function defaultMiiAppearance(seed: number): MiiAppearance {
     hairColor: Math.abs(seed * 3) % HAIR_COLORS.length,
     shirtColor: Math.abs(seed * 7) % SHIRT_COLORS.length,
     hairStyle: 0,
+    gender: "male",
   };
 }
 
@@ -63,11 +72,12 @@ export function MiiAvatar({
   const shirt = SHIRT_COLORS[appearance?.shirtColor ?? defaults.shirtColor]?.value
     ?? SHIRT_COLORS[defaults.shirtColor].value;
   const hairStyle = appearance?.hairStyle ?? defaults.hairStyle;
+  const isFemale = (appearance?.gender ?? defaults.gender) === "female";
 
   return (
     <svg
       role="img"
-      aria-label="Avatar Mii"
+      aria-label={isFemale ? "Avatar Mii femenino" : "Avatar Mii masculino"}
       viewBox="0 0 160 180"
       width={size}
       height={size}
@@ -102,6 +112,13 @@ export function MiiAvatar({
         <path d="M42 58 Q29 23 62 13 Q88 4 109 20 Q129 33 117 61 L109 45 Q93 35 78 37 Q59 37 48 53Z" fill={hair} />
       )}
       <path d="M44 49 Q61 36 78 38 Q98 36 114 49 L111 61 Q103 49 94 49 Q75 44 53 57 L48 70Z" fill={hair} />
+
+      {isFemale && (
+        <>
+          <path d="M44 48 Q28 67 37 101 Q40 115 49 117 L53 91 L49 59Z" fill={hair} />
+          <path d="M116 48 Q132 67 123 101 Q120 115 111 117 L107 91 L111 59Z" fill={hair} />
+        </>
+      )}
 
       <ellipse cx="62" cy="70" rx="11" ry="13" fill="#ffffff" />
       <ellipse cx="98" cy="70" rx="11" ry="13" fill="#ffffff" />

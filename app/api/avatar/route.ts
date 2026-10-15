@@ -14,6 +14,7 @@ type AvatarAppearance = {
   hairColor: number;
   shirtColor: number;
   hairStyle: number;
+  gender?: "male" | "female";
 };
 
 function isValidAppearance(value: unknown): value is AvatarAppearance {
@@ -21,13 +22,20 @@ function isValidAppearance(value: unknown): value is AvatarAppearance {
 
   const appearance = value as Record<string, unknown>;
 
-  return Object.entries(APPEARANCE_LIMITS).every(([key, limit]) => {
+  const validIndexes = Object.entries(APPEARANCE_LIMITS).every(([key, limit]) => {
     const index = appearance[key];
     return typeof index === "number"
       && Number.isInteger(index)
       && index >= 0
       && index < limit;
   });
+
+  const validGender =
+    appearance.gender === undefined ||
+    appearance.gender === "male" ||
+    appearance.gender === "female";
+
+  return validIndexes && validGender;
 }
 
 export async function PUT(request: Request) {
