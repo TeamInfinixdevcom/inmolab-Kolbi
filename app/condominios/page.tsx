@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useRBAC } from "@/components/auth/rbac-provider";
 import { db } from "@/lib/firebase";
 import { creationAudit, updateAudit } from "@/lib/firestore-audit";
-import { hasPermission, type Role } from "@/lib/rbac";
+import { hasPermission, isRole, type Role } from "@/lib/rbac";
 
 type DirectoryUser = { uid: string; displayName: string; email: string; role: Role };
 type CondominiumStatus = "Activa" | "Inactiva";
@@ -46,9 +46,11 @@ export default function CondominiosPage() {
     try {
       const condominiumsRef = collection(firestore, "condominios");
 
-      const [snapshot, userSnapshot] = await Promise.all([
+      const [snapshot, userResponse] = await Promise.all([
         getDocs(condominiumsRef),
-        role === "ADMIN" ? getDocs(collection(firestore, "inmobiliarios")) : Promise.resolve(null),
+        role === "ADMIN"
+          ? user.getIdToken().then((token) => fetch("/api/users", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }))
+          : Promise.resolve(null),
       ]);
       const loaded = snapshot.docs.map((item) => {
         const data = item.data();
@@ -58,17 +60,18 @@ export default function CondominiosPage() {
           status: data.status === "Inactiva" ? "Inactiva" : "Activa",
         } as Condominium;
       });
-      if (role === "ADMIN" && userSnapshot) {
-        const directory = userSnapshot.docs.flatMap((item): DirectoryUser[] => {
-          const data = item.data();
-          if (typeof data.email !== "string" || (data.role !== "ADMIN" && data.role !== "SUPERVISOR" && data.role !== "AGENTE")) return [];
+      if (role === "ADMIN" && userResponse) {
+        const responseData = await userResponse.json().catch(() => ({}));
+        if (!userResponse.ok) throw new Error("No se pudo consultar el directorio de usuarios.");
+        const directory = (Array.isArray(responseData.users) ? responseData.users : []).flatMap((item: Record<string, unknown>): DirectoryUser[] => {
+          if (typeof item.uid !== "string" || typeof item.email !== "string" || !isRole(item.role) || item.disabled === true) return [];
           return [{
-            uid: item.id,
-            email: data.email,
-            displayName: typeof data.name === "string" ? data.name : typeof data.displayName === "string" ? data.displayName : data.email,
-            role: data.role,
+            uid: item.uid,
+            email: item.email,
+            displayName: typeof item.name === "string" && item.name.trim() ? item.name.trim() : item.email,
+            role: item.role,
           }];
-        }).sort((a, b) => a.displayName.localeCompare(b.displayName));
+        }).sort((a: DirectoryUser, b: DirectoryUser) => a.displayName.localeCompare(b.displayName));
         setUsers(directory);
       }
       setItems(loaded);
@@ -201,10 +204,10 @@ export default function CondominiosPage() {
         <label className="text-sm font-medium">Administrador<input value={form.administrator} onChange={(event) => setForm({ ...form, administrator: event.target.value })} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal" /></label>
         <label className="text-sm font-medium">Email del administrador<input type="email" value={form.administratorEmail} onChange={(event) => setForm({ ...form, administratorEmail: event.target.value })} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal" /></label>
         <label className="text-sm font-medium">Estado<select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as CondominiumStatus })} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal"><option value="Activa">Activa</option><option value="Inactiva">Inactiva</option></select></label>
-        <label className="text-sm font-medium">Usuario responsable{role === "AGENTE" && !editingId ? <input value={user?.displayName ?? user?.email ?? "Usuario actual"} disabled className="mt-2 h-10 w-full rounded-md border bg-muted px-3 font-normal" /> : <select required disabled={!canEditAll} value={form.assignedTo} onChange={(event) => setForm({ ...form, assignedTo: event.target.value })} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal"><option value="">Seleccionar usuario</option>{users.map((item) => <option key={item.uid} value={item.uid}>{item.displayName} — {item.role}</option>)}</select>}</label>
+        <label className="text-sm font-medium">Usuario responsable{role === "AGENTE" && !editingId ? <input value={user?.displayName ?? user?.email ?? "Usuario actual"} disabled className="mt-2 h-10 w-full rounded-md border bg-muted px-3 font-normal" /> : <select required disabled={!canEditAll} value={form.assignedTo} onChange={(event) => setForm({ ...form, assignedTo: event.target.value })} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal"><option value="">Seleccionar usuario</option>{users.map((item) => <option key={item.uid} value={item.uid}>{item.displayName} · {item.email} — {item.role}</option>)}</select>}</label>
         <div className="flex justify-end gap-2 sm:col-span-2"><Button type="button" variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar condominio"}</Button></div>
       </form></CardContent></Card>}
-      <Card><CardHeader><CardTitle>Todos los condominios</CardTitle></CardHeader><CardContent>{loading ? <p className="py-10 text-center text-sm text-muted-foreground">Cargando condominios...</p> : visibleItems.length === 0 ? <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No hay condominios registrados.</p> : <div className="grid gap-4 md:grid-cols-2">{visibleItems.map((item) => { const canEditItem = canEditAll || (role === "AGENTE" && item.assignedTo === user?.uid && (item.createdBy === user?.uid || item.createdByRole === "ADMIN" || item.createdByRole === "SUPERVISOR")); const canDeleteItem = role === "ADMIN" || (role === "AGENTE" && item.assignedTo === user?.uid && item.createdBy === user?.uid); return <article key={item.id} className="rounded-xl border p-4"><div className="flex items-start justify-between gap-3"><div className="flex items-center gap-3"><span className="rounded-lg bg-primary/10 p-2 text-primary"><Building2 size={18} /></span><div><h2 className="font-semibold">{item.name}</h2><p className="text-sm text-muted-foreground">{item.administrator || "Sin administrador"}{item.administratorEmail && ` · ${item.administratorEmail}`}</p></div></div>{(canEditItem || canDeleteItem) && <div className="flex gap-1">{canEditItem && <><Button variant="ghost" size="icon" onClick={() => void toggleStatus(item)} aria-label={`${item.status === "Activa" ? "Inactivar" : "Activar"} ${item.name}`}>{item.status === "Activa" ? <ToggleRight size={20} className="text-emerald-600" /> : <ToggleLeft size={20} />}</Button><Button variant="ghost" size="icon" onClick={() => openEdit(item)} aria-label={`Editar ${item.name}`}><Edit3 size={16} /></Button></>}{canDeleteItem && <Button variant="ghost" size="icon" onClick={() => void remove(item)} aria-label={`Eliminar ${item.name}`}><Trash2 size={16} className="text-destructive" /></Button>}</div>}</div><div className="mt-4 flex items-center justify-between text-sm"><p className="flex items-center gap-2 text-muted-foreground"><UserRound size={15} /> Responsable: {item.assignedToName || item.assignedToEmail || "Sin datos"}</p><span className={`rounded-full px-2 py-1 text-xs font-medium ${item.status === "Activa" ? "bg-emerald-50 text-emerald-700" : "bg-muted text-muted-foreground"}`}>{item.status}</span></div></article>; })}</div>}</CardContent></Card>
+      <Card><CardHeader><CardTitle>Todos los condominios</CardTitle></CardHeader><CardContent>{loading ? <p className="py-10 text-center text-sm text-muted-foreground">Cargando condominios...</p> : visibleItems.length === 0 ? <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No hay condominios registrados.</p> : <div className="grid gap-4 md:grid-cols-2">{visibleItems.map((item) => { const canEditItem = canEditAll || (role === "AGENTE" && item.assignedTo === user?.uid && (item.createdBy === user?.uid || item.createdByRole === "ADMIN" || item.createdByRole === "SUPERVISOR")); const canDeleteItem = role === "ADMIN" || (role === "AGENTE" && item.assignedTo === user?.uid && item.createdBy === user?.uid); return <article key={item.id} className="rounded-xl border p-4"><div className="flex items-start justify-between gap-3"><div className="flex items-center gap-3"><span className="rounded-lg bg-primary/10 p-2 text-primary"><Building2 size={18} /></span><div><h2 className="font-semibold">{item.name}</h2><p className="text-sm text-muted-foreground">{item.administrator || "Sin administrador"}{item.administratorEmail && ` · ${item.administratorEmail}`}</p></div></div>{(canEditItem || canDeleteItem) && <div className="flex gap-1">{canEditItem && <><Button variant="ghost" size="icon" onClick={() => void toggleStatus(item)} aria-label={`${item.status === "Activa" ? "Inactivar" : "Activar"} ${item.name}`}>{item.status === "Activa" ? <ToggleRight size={20} className="text-emerald-600" /> : <ToggleLeft size={20} />}</Button><Button variant="ghost" size="icon" onClick={() => openEdit(item)} aria-label={`Editar ${item.name}`}><Edit3 size={16} /></Button></>}{canDeleteItem && <Button variant="ghost" size="icon" onClick={() => void remove(item)} aria-label={`Eliminar ${item.name}`}><Trash2 size={16} className="text-destructive" /></Button>}</div>}</div><div className="mt-4 flex items-center justify-between text-sm"><p className="flex items-center gap-2 text-muted-foreground"><UserRound size={15} /> Responsable: {item.assignedToName || item.assignedToEmail || "Sin datos"}{item.assignedToName && item.assignedToEmail && ` · ${item.assignedToEmail}`}</p><span className={`rounded-full px-2 py-1 text-xs font-medium ${item.status === "Activa" ? "bg-emerald-50 text-emerald-700" : "bg-muted text-muted-foreground"}`}>{item.status}</span></div></article>; })}</div>}</CardContent></Card>
     </section>
   );
 }

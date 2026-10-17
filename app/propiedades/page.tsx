@@ -79,9 +79,11 @@ type Property = {
   createdAt?: string;
   createdBy?: string;
   createdById?: string;
+  createdByName?: string;
   updatedAt?: string;
   updatedBy?: string;
   updatedById?: string;
+  updatedByName?: string;
   history: HistoryEntry[];
 };
 
@@ -91,14 +93,16 @@ type PropertyForm = Omit<
   | "createdAt"
   | "createdBy"
   | "createdById"
+  | "createdByName"
   | "updatedAt"
   | "updatedBy"
   | "updatedById"
+  | "updatedByName"
   | "history"
   | "inmobiliarioName"
 >;
 
-type Inmobiliario = { id: string; name: string };
+type Inmobiliario = { id: string; name: string; email: string };
 
 const emptyForm: PropertyForm = {
   condominiumName: "",
@@ -169,6 +173,14 @@ function readHistory(value: unknown): HistoryEntry[] {
 
 function mapProperty(id: string, data: Record<string, unknown>, agents: Inmobiliario[]): Property {
   const inmobiliarioId = text(data.inmobiliarioId);
+  const actorName = (uid: string, savedName: unknown) => {
+    const actor = agents.find((agent) => agent.id === uid);
+    const name = text(savedName).trim();
+    if (name && !(name.includes("@") && actor?.name)) return name;
+    return actor?.name || actor?.email || name;
+  };
+  const createdBy = text(data.createdById ?? data.createdBy);
+  const updatedBy = text(data.updatedById ?? data.updatedBy);
   return {
     id,
     condominiumName: text(data.condominiumName ?? data.title),
@@ -198,9 +210,11 @@ function mapProperty(id: string, data: Record<string, unknown>, agents: Inmobili
     createdAt: text(data.createdAt),
     createdBy: text(data.createdBy),
     createdById: text(data.createdById),
+    createdByName: actorName(createdBy, data.createdByName) || "Usuario sin nombre disponible",
     updatedAt: text(data.updatedAt),
     updatedBy: text(data.updatedBy),
     updatedById: text(data.updatedById),
+    updatedByName: actorName(updatedBy, data.updatedByName) || "Usuario sin nombre disponible",
     history: readHistory(data.history),
   };
 }
@@ -241,7 +255,11 @@ export default function PropiedadesPage() {
       }
       try {
         const agentSnapshot = await getDocs(collection(db, "inmobiliarios"));
-        const agents = agentSnapshot.docs.map((item) => ({ id: item.id, name: text(item.data().name) }));
+        const agents = agentSnapshot.docs.map((item) => ({
+          id: item.id,
+          name: text(item.data().name),
+          email: text(item.data().email),
+        }));
         if (!active) return;
         setInmobiliarios(agents);
         unsubscribeProperties = onSnapshot(collection(db, propertyCollection), (snapshot) => {
@@ -381,9 +399,10 @@ export default function PropiedadesPage() {
   }
 
   function actor() {
+    const userProfile = inmobiliarios.find((item) => item.id === user?.uid);
     return {
       userId: user?.uid ?? "",
-      user: user?.email ?? "Usuario actual",
+      user: userProfile?.name || user?.displayName || user?.email || "Usuario actual",
       date: new Date().toISOString(),
     };
   }
@@ -591,14 +610,14 @@ export default function PropiedadesPage() {
             <article key={property.id} className="rounded-xl border p-4 transition-shadow hover:shadow-md">
               <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-2"><span className="rounded-lg bg-primary/10 p-2 text-primary"><Building2 size={18} /></span><div><h2 className="font-semibold">{property.condominiumName || "Sin nombre"}</h2><p className="text-xs text-muted-foreground">Administrador: {property.administrator || "Sin asignar"}</p></div></div><span className={`rounded-full px-2 py-1 text-xs font-medium ${property.status === "Activa" ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}`}>{property.status}</span></div>
               <div className="mt-4 grid grid-cols-2 gap-2 text-sm"><div><p className="text-muted-foreground">Servicios activos</p><p className="font-semibold">{property.activeServices}</p></div><div><p className="text-muted-foreground">Casas construidas</p><p className="font-semibold">{property.builtHouses}</p></div><div><p className="text-muted-foreground">NAP</p><p className="font-semibold">{property.nap || "—"}</p></div><div><p className="text-muted-foreground">Retirados</p><p className="font-semibold">{property.removedServices}</p></div></div>
-              <p className="mt-4 border-t pt-3 text-xs text-muted-foreground">Última actualización: {property.updatedBy || property.createdBy || "Sin registrar"}</p>
+              <p className="mt-4 border-t pt-3 text-xs text-muted-foreground">Última actualización: {property.updatedByName || property.createdByName || "Usuario sin nombre disponible"}</p>
               <div className="mt-4 flex justify-between gap-2"><Button variant="outline" size="sm" onClick={() => setSelected(property)}><Eye size={15} className="mr-1" /> Bitácora</Button>{canUpdate && (role !== "AGENTE" || property.createdBy === user?.uid) && <><Button variant="ghost" size="icon" onClick={() => openEdit(property)} aria-label={`Editar ${property.condominiumName}`}><Edit3 size={16} /></Button><Button variant="ghost" size="icon" onClick={() => void toggleStatus(property)} aria-label="Cambiar estado">{property.status === "Activa" ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}</Button></>}</div>
             </article>
           ))}</div>}
         </CardContent>
       </Card>
 
-      {selected && <Card><CardHeader className="flex-row items-center justify-between"><div><CardTitle>Bitácora · {selected.condominiumName || "Condominio"}</CardTitle><p className="mt-1 text-sm text-muted-foreground">Creado por {selected.createdBy || "Sin registrar"}{selected.createdAt && ` · ${new Date(selected.createdAt).toLocaleString("es-CR")}`}</p></div><Button variant="ghost" size="icon" onClick={() => setSelected(null)} aria-label="Cerrar bitácora"><X size={18} /></Button></CardHeader><CardContent><div className="space-y-5">{selected.history.length === 0 ? <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">Este registro no tiene historial todavía.</p> : [...selected.history].sort((a, b) => b.date.localeCompare(a.date)).map((entry) => <div key={entry.id} className="flex gap-3 border-b pb-4 last:border-0"><span className="mt-1 rounded-full bg-primary/10 p-2 text-primary"><Check size={15} /></span><div className="min-w-0 flex-1"><div className="flex flex-col justify-between gap-1 sm:flex-row"><p className="font-semibold">{entry.type === "created" ? "Registro inicial" : "Actualización"}</p><time className="text-xs text-muted-foreground">{new Date(entry.date).toLocaleString("es-CR")}</time></div><p className="mt-1 text-sm">Por {entry.user || "Usuario actual"}</p>{entry.changes.length > 0 && <p className="mt-1 text-xs text-muted-foreground">Cambios: {entry.changes.join(", ")}</p>}{entry.note && <p className="mt-2 text-sm text-muted-foreground">{entry.note}</p>}{entry.observations && <p className="mt-1 text-sm text-muted-foreground">Observaciones: {entry.observations}</p>}</div></div>)}</div></CardContent></Card>}
+      {selected && <Card><CardHeader className="flex-row items-center justify-between"><div><CardTitle>Bitácora · {selected.condominiumName || "Condominio"}</CardTitle><p className="mt-1 text-sm text-muted-foreground">Creado por {selected.createdByName || "Usuario sin nombre disponible"}{selected.createdAt && ` · ${new Date(selected.createdAt).toLocaleString("es-CR")}`}</p></div><Button variant="ghost" size="icon" onClick={() => setSelected(null)} aria-label="Cerrar bitácora"><X size={18} /></Button></CardHeader><CardContent><div className="space-y-5">{selected.history.length === 0 ? <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">Este registro no tiene historial todavía.</p> : [...selected.history].sort((a, b) => b.date.localeCompare(a.date)).map((entry) => <div key={entry.id} className="flex gap-3 border-b pb-4 last:border-0"><span className="mt-1 rounded-full bg-primary/10 p-2 text-primary"><Check size={15} /></span><div className="min-w-0 flex-1"><div className="flex flex-col justify-between gap-1 sm:flex-row"><p className="font-semibold">{entry.type === "created" ? "Registro inicial" : "Actualización"}</p><time className="text-xs text-muted-foreground">{new Date(entry.date).toLocaleString("es-CR")}</time></div><p className="mt-1 text-sm">Por {entry.user || "Usuario actual"}</p>{entry.changes.length > 0 && <p className="mt-1 text-xs text-muted-foreground">Cambios: {entry.changes.join(", ")}</p>}{entry.note && <p className="mt-2 text-sm text-muted-foreground">{entry.note}</p>}{entry.observations && <p className="mt-1 text-sm text-muted-foreground">Observaciones: {entry.observations}</p>}</div></div>)}</div></CardContent></Card>}
     </section>
   );
 }
