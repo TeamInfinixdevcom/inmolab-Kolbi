@@ -10,7 +10,7 @@
     --foreground: 222 47% 11%;
     --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
-    --primary: 221 83% 53%;
+    --primary: 150 100% 26%;
     --primary-foreground: 210 40% 98%;
     --muted: 214 32% 91%;
     --muted-foreground: 215 16% 47%;
@@ -33,9 +33,9 @@
 
 .route-transition { animation: route-enter 240ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 .weather-sky-card { transition: background-color 450ms ease, border-color 450ms ease, color 450ms ease; }
-.weather-sky-card[data-phase="day"] { background: linear-gradient(125deg, #fffdf4 0%, #f0f7ff 58%, #ecf5ff 100%); border-color: #d9e7fa; }
+.weather-sky-card[data-phase="day"] { background: linear-gradient(125deg, #fffef3 0%, #f2f9ed 58%, #eaf5e8 100%); border-color: #d9ead1; }
 .weather-sky-card[data-phase="sunset"] { background: linear-gradient(125deg, #fff2dd 0%, #ffe5e0 54%, #f3eaff 100%); border-color: #f2d7ce; }
-.weather-sky-card[data-phase="night"] { background: linear-gradient(125deg, #e8edff 0%, #e9e8fa 55%, #eee9f6 100%); border-color: #d9d9ef; }
+.weather-sky-card[data-phase="night"] { background: linear-gradient(125deg, #eef3ed 0%, #e9f0eb 55%, #e6eee9 100%); border-color: #d2e1d6; }
 .weather-sky-orb { position: absolute; top: -2.5rem; right: -1.5rem; width: 7rem; height: 7rem; border-radius: 9999px; background: radial-gradient(circle, rgb(255 255 255 / 78%) 0%, rgb(255 255 255 / 36%) 45%, transparent 72%); animation: weather-orb-float 5s ease-in-out infinite alternate; pointer-events: none; }
 .weather-data-enter { animation: route-enter 320ms ease both; }
 
