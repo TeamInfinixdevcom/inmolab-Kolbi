@@ -50,11 +50,10 @@ function WeatherIcon({ condition, phase, className }: { condition: string; phase
 export function WeatherTimeWidget({ now }: WeatherTimeWidgetProps) {
   const { user } = useRBAC();
   const [weather, setWeather] = useState<WeatherReading | null>(null);
-  const [weatherUnavailable, setWeatherUnavailable] = useState(false);
   const hour = getHour(now);
   const phase = getDayPhase(hour);
   const time = getCostaRicaDateTime(now ?? new Date()).time;
-  const iconClassName = `weather-main-icon h-12 w-12 shrink-0 ${phase === "night" ? "text-indigo-800" : phase === "sunset" ? "text-orange-700" : "text-amber-600"}`;
+  const iconClassName = `weather-main-icon h-12 w-12 shrink-0 ${phase === "night" ? "text-emerald-900" : phase === "sunset" ? "text-orange-700" : "text-amber-600"}`;
 
   const loadWeather = useCallback(async (signal: AbortSignal) => {
     if (!user) return;
@@ -69,10 +68,9 @@ export function WeatherTimeWidget({ now }: WeatherTimeWidgetProps) {
       const result = await response.json() as { weather?: WeatherReading };
       if (!result.weather) throw new Error("Weather is unavailable");
       setWeather(result.weather);
-      setWeatherUnavailable(false);
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") return;
-      setWeatherUnavailable(true);
+      // Keep the clock and day-part display available when weather data is not configured.
     }
   }, [user]);
 
@@ -101,8 +99,8 @@ export function WeatherTimeWidget({ now }: WeatherTimeWidgetProps) {
             <p className="weather-data-enter mt-1 text-3xl font-semibold tracking-tight">{Math.round(weather.temperatureC)}°</p>
             <p className="truncate text-sm text-foreground/75">{weather.condition}</p>
           </> : <>
-            <p className="mt-1 text-2xl font-semibold tracking-tight">{weatherUnavailable ? "Clima sin conexión" : "Clima local"}</p>
-            <p className="text-sm text-foreground/75">{weatherUnavailable ? "Disponible al configurar el servicio" : "Consultando el tiempo…"}</p>
+            <p className="mt-1 text-2xl font-semibold tracking-tight">Clima local</p>
+            <p className="text-sm text-foreground/75">{phase === "day" ? "Luz de día" : phase === "sunset" ? "Atardecer" : "Noche tranquila"}</p>
           </>}
           <p className="mt-3 text-xs font-medium text-foreground/65">{time} · Costa Rica</p>
         </div>
