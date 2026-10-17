@@ -3,7 +3,6 @@
 import {
   ArrowUpRight,
   Building2,
-  CalendarDays,
   CheckCircle2,
   Home,
   TrendingUp,
@@ -15,6 +14,7 @@ import { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useRBAC } from "@/components/auth/rbac-provider";
+import { WeatherTimeWidget } from "@/components/dashboard/weather-time-widget";
 import { canAccessModule, hasPermission } from "@/lib/rbac";
 import { db } from "@/lib/firebase";
 import { getCostaRicaDateTime, isEventInPast } from "@/lib/agenda";
@@ -41,12 +41,20 @@ function dateLabel(date: string) {
 
 export default function DashboardPage() {
   const { role } = useRBAC();
+  const [clock, setClock] = useState<Date | null>(null);
   const canManageTeam = hasPermission(role, "inmobiliarios", "manage");
   const [properties, setProperties] = useState<Property[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [events, setEvents] = useState<DashboardEvent[]>([]);
   const [loading, setLoading] = useState(Boolean(db));
   const [dataError, setDataError] = useState(db ? "" : "Firebase no está configurado.");
+
+  useEffect(() => {
+    const updateClock = () => setClock(new Date());
+    updateClock();
+    const interval = window.setInterval(updateClock, 30 * 1000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (!db) return;
@@ -99,6 +107,10 @@ export default function DashboardPage() {
   const totalActiveServices = properties.reduce((sum, property) => sum + property.activeServices, 0);
   const occupancy = totalBuiltHouses ? Math.round((totalActiveServices / totalBuiltHouses) * 100) : 0;
   const now = getCostaRicaDateTime();
+  const clockInCostaRica = getCostaRicaDateTime(clock ?? new Date());
+  const localHour = Number(clockInCostaRica.time.slice(0, 2));
+  const greeting = localHour < 12 ? "Buenos días" : localHour < 18 ? "Buenas tardes" : "Buenas noches";
+  const calendarDate = clock ? new Intl.DateTimeFormat("es-CR", { timeZone: "America/Costa_Rica", dateStyle: "full" }).format(clock) : "Fecha y hora de Costa Rica";
   const upcomingEvents = events.filter((event) => event.status !== "Cancelado" && !isEventInPast(event, now)).sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`)).slice(0, 4);
 
   const chartValues = useMemo(() => {
@@ -122,7 +134,7 @@ export default function DashboardPage() {
   ];
 
   return <div className="space-y-8">
-    <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-sm font-medium text-primary">{new Date().toLocaleDateString("es-CR", { dateStyle: "full" })}</p><h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">Buenos días, equipo <span aria-hidden>👋</span></h1><p className="mt-2 text-muted-foreground">Resumen actualizado directamente desde Firestore.</p></div><div className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm text-muted-foreground"><CalendarDays size={16} className="text-primary" /> Tiempo real</div></header>
+    <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-sm font-medium text-primary">{calendarDate}</p><h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">{clock ? greeting : "Hola"}, equipo <span aria-hidden>👋</span></h1><p className="mt-2 text-muted-foreground">Resumen actualizado directamente desde Firestore.</p></div><WeatherTimeWidget now={clock} /></header>
     {dataError && <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{dataError}</div>}
     <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{stats.filter(({ module }) => canAccessModule(role, module)).map(({ label, value, detail, icon: Icon, tone }) => <Card key={label} className="overflow-hidden"><CardContent className="flex items-start justify-between p-5"><div><p className="text-sm text-muted-foreground">{label}</p><p className="mt-2 text-3xl font-bold tracking-tight">{loading ? "..." : value}</p><p className="mt-2 flex items-center gap-1 text-xs font-medium text-emerald-600"><TrendingUp size={13} /> {detail}</p></div><span className={`rounded-xl p-3 ${tone === "blue" ? "bg-blue-50 text-blue-600" : tone === "violet" ? "bg-violet-50 text-violet-600" : tone === "amber" ? "bg-amber-50 text-amber-600" : "bg-emerald-50 text-emerald-600"}`}><Icon size={21} /></span></CardContent></Card>)}</section>
     <section className="grid gap-6 lg:grid-cols-5"><Card className="lg:col-span-3"><CardHeader><CardTitle>Condominios registrados por mes</CardTitle><p className="mt-1 text-sm text-muted-foreground">Datos calculados con la fecha real de creación</p></CardHeader><CardContent><div className="flex h-56 items-end gap-2 border-b border-l px-3 pb-0 pt-5 sm:gap-3">{chartValues.map(({ value, height }, index) => <div key={chartLabels[index]} className="group flex h-full flex-1 flex-col justify-end gap-2"><div className="relative w-full rounded-t-md bg-primary/15 transition-colors group-hover:bg-primary/35" style={{ height: `${height}%` }}><span className="absolute -top-6 left-1/2 hidden -translate-x-1/2 text-[10px] font-semibold group-hover:block">{value}</span></div><span className="text-center text-[10px] text-muted-foreground">{chartLabels[index]}</span></div>)}</div></CardContent></Card>

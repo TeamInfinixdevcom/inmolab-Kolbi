@@ -30,6 +30,7 @@ import { db } from "@/lib/firebase";
 import { hasPermission } from "@/lib/rbac";
 import { creationAudit, updateAudit } from "@/lib/firestore-audit";
 import type { MapPosition } from "@/components/mapa/real-map";
+import { parseCoordinatePair } from "@/lib/coordinates";
 
 const RealMap = dynamic(
   () => import("@/components/mapa/real-map").then((module) => module.RealMap),
@@ -225,6 +226,8 @@ export default function PropiedadesPage() {
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const [coordinateInput, setCoordinateInput] = useState("");
+  const [coordinateError, setCoordinateError] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -295,9 +298,42 @@ export default function PropiedadesPage() {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
+  function updateCoordinates(value: string) {
+    setCoordinateInput(value);
+    if (!value.trim()) {
+      setCoordinateError("");
+      setForm((current) => ({ ...current, latitude: "", longitude: "" }));
+      return;
+    }
+
+    const coordinates = parseCoordinatePair(value);
+    if (!coordinates) {
+      setCoordinateError("Pegá las coordenadas en formato latitud, longitud. Ejemplo: 9.985405, -84.105392");
+      setForm((current) => ({ ...current, latitude: "", longitude: "" }));
+      return;
+    }
+
+    setCoordinateError("");
+    setForm((current) => ({
+      ...current,
+      latitude: String(coordinates.latitude),
+      longitude: String(coordinates.longitude),
+    }));
+  }
+
+  function applyMapCoordinates(position: MapPosition) {
+    const latitude = position.latitude.toFixed(6);
+    const longitude = position.longitude.toFixed(6);
+    setCoordinateInput(`${latitude}, ${longitude}`);
+    setCoordinateError("");
+    setForm((current) => ({ ...current, latitude, longitude }));
+  }
+
   function openCreate() {
     setEditingId(null);
     setForm({ ...emptyForm, inmobiliarioId: user?.uid ?? "" });
+    setCoordinateInput("");
+    setCoordinateError("");
     setShowLocationPicker(false);
     setSelected(null);
     setError("");
@@ -306,6 +342,13 @@ export default function PropiedadesPage() {
 
   function openEdit(property: Property) {
     setEditingId(property.id);
+    const existingCoordinates = property.latitude && property.longitude
+      ? `${property.latitude}, ${property.longitude}`
+      : "";
+    setCoordinateInput(existingCoordinates);
+    setCoordinateError(existingCoordinates && !parseCoordinatePair(existingCoordinates)
+      ? "Las coordenadas guardadas no son válidas. Corregilas o borralas antes de guardar."
+      : "");
     setForm({
       condominiumName: property.condominiumName,
       region: property.region,
@@ -329,7 +372,7 @@ export default function PropiedadesPage() {
       status: property.status,
       latitude: property.latitude,
       longitude: property.longitude,
-      inmobiliarioId: property.inmobiliarioId,
+      inmobiliarioId: property.inmobiliarioId || property.createdById || property.createdBy || user?.uid || "",
     });
     setShowLocationPicker(false);
     setSelected(null);
@@ -356,23 +399,14 @@ export default function PropiedadesPage() {
       return;
     }
 
-    const hasLatitude = form.latitude.trim() !== "";
-    const hasLongitude = form.longitude.trim() !== "";
-    const latitude = hasLatitude ? Number(form.latitude) : undefined;
-    const longitude = hasLongitude ? Number(form.longitude) : undefined;
-    if (hasLatitude !== hasLongitude) {
-      setError("Para ubicar el condominio, completá latitud y longitud.");
+    const coordinateText = coordinateInput.trim();
+    const coordinates = coordinateText ? parseCoordinatePair(coordinateInput) : null;
+    if (coordinateText && !coordinates) {
+      setError("Revisá las coordenadas. Pegá latitud y longitud separadas por una coma.");
       return;
     }
-    if (
-      hasLatitude && hasLongitude &&
-      (latitude === undefined || longitude === undefined ||
-        !Number.isFinite(latitude) || !Number.isFinite(longitude) ||
-        latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180)
-    ) {
-      setError("Revisá las coordenadas: latitud entre -90 y 90, longitud entre -180 y 180.");
-      return;
-    }
+    const latitude = coordinates?.latitude;
+    const longitude = coordinates?.longitude;
 
     setSaving(true);
     setError("");
@@ -432,6 +466,8 @@ export default function PropiedadesPage() {
       setShowForm(false);
       setEditingId(null);
       setForm(emptyForm);
+      setCoordinateInput("");
+      setCoordinateError("");
     } catch (saveError) {
       console.error("No se pudo guardar el condominio.", saveError);
       setError("No se pudo guardar el condominio. Verifica los permisos de Firestore.");
@@ -519,18 +555,17 @@ export default function PropiedadesPage() {
                   </Button>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="text-sm font-medium">Latitud<input type="number" step="any" min="-90" max="90" value={form.latitude} onChange={(event) => updateField("latitude", event.target.value)} placeholder="9.9281" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
-                  <label className="text-sm font-medium">Longitud<input type="number" step="any" min="-180" max="180" value={form.longitude} onChange={(event) => updateField("longitude", event.target.value)} placeholder="-84.0907" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+                  <label className="text-sm font-medium sm:col-span-2">Pegar coordenadas de Google Maps<input type="text" inputMode="text" value={coordinateInput} onChange={(event) => updateCoordinates(event.target.value)} placeholder="9.985405049140589, -84.10539207560959" aria-invalid={Boolean(coordinateError)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+                  <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">Latitud: <strong>{form.latitude ? Number(form.latitude).toFixed(6) : "—"}</strong></div>
+                  <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">Longitud: <strong>{form.longitude ? Number(form.longitude).toFixed(6) : "—"}</strong></div>
                 </div>
+                {coordinateError && <p role="alert" className="text-sm text-red-600">{coordinateError}</p>}
                 {showLocationPicker && (
                   <div className="h-[430px] overflow-hidden rounded-lg border">
                     <RealMap
                       markers={[]}
                       selectedPosition={selectedMapPosition}
-                      onMapClick={(position: MapPosition) => {
-                        updateField("latitude", position.latitude.toFixed(6));
-                        updateField("longitude", position.longitude.toFixed(6));
-                      }}
+                      onMapClick={applyMapCoordinates}
                     />
                   </div>
                 )}

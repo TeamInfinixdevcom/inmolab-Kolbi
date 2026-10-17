@@ -80,8 +80,8 @@ export default function MapaPage() {
             latitude,
             longitude,
             status: String(data.status ?? "Activa"),
-            inmobiliarioId: String(data.inmobiliarioId ?? ""),
-            inmobiliarioName: String(data.inmobiliarioName ?? ""),
+            inmobiliarioId: String(data.inmobiliarioId ?? data.createdById ?? data.createdBy ?? ""),
+            inmobiliarioName: String(data.inmobiliarioName ?? data.createdByName ?? ""),
           }];
         });
         setProperties(loaded);

@@ -56,6 +56,7 @@ before(async () => {
         name: "Agente A",
         email: "agent-a@example.com",
         role: "AGENTE",
+        avatarId: "avatar-prof-1",
       }),
       database.doc("inmobiliarios/agent-b").set({
         name: "Agente B",
@@ -68,6 +69,36 @@ before(async () => {
 
 after(async () => {
   await testEnvironment.cleanup();
+});
+
+test("los demás usuarios autorizados pueden ver una propiedad guardada y el avatar de su responsable", async () => {
+  const ownerDatabase = testEnvironment.authenticatedContext("agent-a", { role: "AGENTE" }).firestore();
+  const property = ownerDatabase.doc("propiedades/map-visible-to-roles");
+
+  await assertSucceeds(property.set({
+    condominiumName: "Condominio con ubicación",
+    latitude: 9.985405049140589,
+    longitude: -84.10539207560959,
+    inmobiliarioId: "agent-a",
+    createdBy: "agent-a",
+    createdById: "agent-a",
+    updatedBy: "agent-a",
+  }));
+  await assertSucceeds(property.update({
+    latitude: 9.99,
+    longitude: -84.11,
+    updatedBy: "agent-a",
+  }));
+
+  for (const [uid, role] of [["agent-b", "AGENTE"], ["supervisor", "SUPERVISOR"], ["admin", "ADMIN"]]) {
+    const reader = testEnvironment.authenticatedContext(uid, { role }).firestore();
+    const savedProperty = await assertSucceeds(reader.doc("propiedades/map-visible-to-roles").get());
+    const responsible = await assertSucceeds(reader.doc("inmobiliarios/agent-a").get());
+
+    assert.equal(savedProperty.data().latitude, 9.99);
+    assert.equal(savedProperty.data().inmobiliarioId, "agent-a");
+    assert.equal(responsible.data().avatarId, "avatar-prof-1");
+  }
 });
 
 test("AGENTE puede crear, leer, editar y eliminar su propio condominio", async () => {
