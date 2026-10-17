@@ -27,7 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useRBAC } from "@/components/auth/rbac-provider";
 import { db } from "@/lib/firebase";
-import { hasPermission } from "@/lib/rbac";
+import { hasPermission, isRole } from "@/lib/rbac";
 import { creationAudit, updateAudit } from "@/lib/firestore-audit";
 import type { MapPosition } from "@/components/mapa/real-map";
 import { parseCoordinatePair } from "@/lib/coordinates";
@@ -229,6 +229,7 @@ export default function PropiedadesPage() {
   const { role, user } = useRBAC();
   const canCreate = hasPermission(role, "propiedades", "create");
   const canUpdate = hasPermission(role, "propiedades", "update");
+  const canAssign = role === "ADMIN";
   const [properties, setProperties] = useState<Property[]>([]);
   const [inmobiliarios, setInmobiliarios] = useState<Inmobiliario[]>([]);
   const [form, setForm] = useState<PropertyForm>(emptyForm);
@@ -255,11 +256,37 @@ export default function PropiedadesPage() {
       }
       try {
         const agentSnapshot = await getDocs(collection(db, "inmobiliarios"));
-        const agents = agentSnapshot.docs.map((item) => ({
+        const agentsById = new Map(agentSnapshot.docs.map((item) => [item.id, {
           id: item.id,
           name: text(item.data().name),
           email: text(item.data().email),
-        }));
+        }] as const));
+        if (role === "ADMIN" && user) {
+          try {
+            const token = await user.getIdToken();
+            const response = await fetch("/api/users", {
+              headers: { Authorization: `Bearer ${token}` },
+              cache: "no-store",
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error("No se pudo consultar el directorio de usuarios.");
+            if (Array.isArray(result.users)) {
+              for (const item of result.users as Array<Record<string, unknown>>) {
+                if (typeof item.uid !== "string" || typeof item.email !== "string" || !isRole(item.role) || item.disabled === true) continue;
+                const existing = agentsById.get(item.uid);
+                agentsById.set(item.uid, {
+                  id: item.uid,
+                  name: typeof item.name === "string" && item.name.trim() ? item.name.trim() : existing?.name || item.email,
+                  email: item.email,
+                });
+              }
+            }
+          } catch (directoryError) {
+            console.error("No se pudo cargar el directorio completo de usuarios.", directoryError);
+            if (active) setError("No se pudo cargar el directorio completo de usuarios.");
+          }
+        }
+        const agents = [...agentsById.values()].sort((a, b) => a.name.localeCompare(b.name));
         if (!active) return;
         setInmobiliarios(agents);
         unsubscribeProperties = onSnapshot(collection(db, propertyCollection), (snapshot) => {
@@ -281,7 +308,7 @@ export default function PropiedadesPage() {
       active = false;
       unsubscribeProperties?.();
     };
-  }, []);
+  }, [role, user]);
 
   const filteredProperties = useMemo(() => properties.filter((property) => {
     const haystack = [
@@ -429,9 +456,19 @@ export default function PropiedadesPage() {
 
     setSaving(true);
     setError("");
-    const agent = inmobiliarios.find((item) => item.id === form.inmobiliarioId);
     const currentActor = actor();
     const previous = editingId ? properties.find((property) => property.id === editingId) : undefined;
+    if (canAssign && !form.inmobiliarioId) {
+      setError("Selecciona un usuario responsable.");
+      setSaving(false);
+      return;
+    }
+    const responsibleId = canAssign
+      ? form.inmobiliarioId
+      : editingId
+        ? previous?.inmobiliarioId || form.inmobiliarioId
+        : currentActor.userId;
+    const responsibleProfile = inmobiliarios.find((item) => item.id === responsibleId);
     const payload = {
       ...form,
       latitude: latitude ?? null,
@@ -442,8 +479,8 @@ export default function PropiedadesPage() {
       administratorEmail: form.administratorEmail.trim(),
       registrationNote: form.registrationNote.trim(),
       observations: form.observations.trim(),
-      inmobiliarioId: editingId ? form.inmobiliarioId : currentActor.userId,
-      inmobiliarioName: editingId ? (agent?.name ?? previous?.inmobiliarioName ?? currentActor.user) : currentActor.user,
+      inmobiliarioId: responsibleId,
+      inmobiliarioName: responsibleProfile?.name || responsibleProfile?.email || (responsibleId === currentActor.userId ? currentActor.user : previous?.inmobiliarioName || "Sin asignar"),
       updatedAt: currentActor.date,
       updatedBy: currentActor.userId,
       updatedById: currentActor.userId,
@@ -561,7 +598,16 @@ export default function PropiedadesPage() {
               <label className="text-sm font-medium">Casas construidas<input min="0" type="number" value={form.builtHouses} onChange={(event) => updateField("builtHouses", Number(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium">NAP<input value={form.nap} onChange={(event) => updateField("nap", event.target.value)} placeholder="Código o referencia NAP" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium">Servicios retirados<input min="0" type="number" value={form.removedServices} onChange={(event) => updateField("removedServices", Number(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
-              <label className="text-sm font-medium">Responsable<input readOnly value={editingId ? (properties.find((property) => property.id === editingId)?.inmobiliarioName || "Usuario creador") : (user?.email ?? "Usuario actual")} className="mt-2 h-10 w-full rounded-md border bg-muted px-3 font-normal text-muted-foreground" /></label>
+              <label className="text-sm font-medium">
+                Responsable
+                {canAssign
+                  ? <select required value={form.inmobiliarioId} onChange={(event) => updateField("inmobiliarioId", event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary">
+                      <option value="">Seleccionar usuario responsable</option>
+                      {form.inmobiliarioId && !inmobiliarios.some((agent) => agent.id === form.inmobiliarioId) && <option value={form.inmobiliarioId}>{editingId ? properties.find((property) => property.id === editingId)?.inmobiliarioName : user?.displayName || user?.email || "Responsable actual"} (actual)</option>}
+                      {inmobiliarios.map((agent) => <option key={agent.id} value={agent.id}>{agent.name || agent.email}{agent.email && agent.name ? ` · ${agent.email}` : ""}</option>)}
+                    </select>
+                  : <input readOnly value={editingId ? (properties.find((property) => property.id === editingId)?.inmobiliarioName || "Usuario responsable") : (inmobiliarios.find((agent) => agent.id === form.inmobiliarioId)?.name || user?.displayName || user?.email || "Usuario actual")} className="mt-2 h-10 w-full rounded-md border bg-muted px-3 font-normal text-muted-foreground" />}
+              </label>
               <label className="text-sm font-medium">Estado<select value={form.status} onChange={(event) => updateField("status", event.target.value as PropertyStatus)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary"><option>Activa</option><option>Inactiva</option></select></label>
               <section aria-labelledby="property-location-title" className="space-y-3 rounded-lg border p-4 sm:col-span-2 lg:col-span-3">
                 <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
