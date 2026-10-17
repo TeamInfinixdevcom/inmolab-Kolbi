@@ -27,6 +27,7 @@ export function RBACProvider({ children }: Readonly<{ children: React.ReactNode 
   const [avatarLoading, setAvatarLoading] = useState(true);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const avatarRequestId = useRef(0);
+  const refreshedRoleUid = useRef<string | null>(null);
   const updateAvatarId = useCallback((nextAvatarId: string) => {
     setAvatarId(nextAvatarId);
     setAvatarError(null);
@@ -47,6 +48,7 @@ export function RBACProvider({ children }: Readonly<{ children: React.ReactNode 
       setAvatarError(null);
 
       if (!nextUser) {
+        refreshedRoleUid.current = null;
         setRole("AGENTE");
         setAvatarLoading(false);
         setLoading(false);
@@ -56,8 +58,17 @@ export function RBACProvider({ children }: Readonly<{ children: React.ReactNode 
       setAvatarLoading(true);
 
       try {
-        const token = await nextUser.getIdTokenResult();
+        let token = await nextUser.getIdTokenResult();
         if (!isCurrentRequest()) return;
+        if (refreshedRoleUid.current !== nextUser.uid) {
+          refreshedRoleUid.current = nextUser.uid;
+          try {
+            token = await nextUser.getIdTokenResult(true);
+          } catch (refreshError) {
+            console.error("No se pudo actualizar el rol de la sesión; se usará el rol disponible.", refreshError);
+          }
+          if (!isCurrentRequest()) return;
+        }
         const nextRole = roleFromClaims(token.claims);
         setRole(nextRole);
         if (db) {
