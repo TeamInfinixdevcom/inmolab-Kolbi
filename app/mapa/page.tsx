@@ -7,7 +7,6 @@ import {
   collection,
   deleteDoc,
   doc,
-  getDocs,
   onSnapshot,
   serverTimestamp,
   updateDoc,
@@ -17,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import type { MapMarker, MapPosition } from "@/components/mapa/real-map";
 import { auth, db } from "@/lib/firebase";
 import { useRBAC } from "@/components/auth/rbac-provider";
+import { DEFAULT_AVATAR_ID, isAvatarId } from "@/lib/avatar-catalog";
 
 const RealMap = dynamic(
   () => import("@/components/mapa/real-map").then((module) => module.RealMap),
@@ -64,12 +64,12 @@ function parseCoordinates(value: string): MapPosition | null {
 export default function MapaPage() {
   const { user, role, loading: authLoading } = useRBAC();
   const [properties, setProperties] = useState<Property[]>([]);
-  const [inmobiliarioAvatars, setInmobiliarioAvatars] = useState<Record<string, { skinTone: number; hairColor: number; shirtColor: number; hairStyle: number }>>({});
+  const [inmobiliarioAvatars, setInmobiliarioAvatars] = useState<Record<string, string | undefined>>({});
   const [references, setReferences] = useState<SavedReference[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(Boolean(db));
   const [saving, setSaving] = useState(false);
   const [searching, setSearching] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(db ? "" : "Firebase no está configurado.");
   const [notice, setNotice] = useState("");
   const [searchText, setSearchText] = useState("");
   const [referenceTitle, setReferenceTitle] = useState("");
@@ -78,48 +78,29 @@ export default function MapaPage() {
   const [editing, setEditing] = useState<SavedReference | null>(null);
 
   useEffect(() => {
-    if (!db) {
-      setLoading(false);
-      setError("Firebase no está configurado.");
-      return;
-    }
+    if (!db) return;
 
     const firestore = db;
     if (!firestore) return;
 
-    const loadInmobiliarioAvatars = async () => {
-      try {
-        const snapshot = await getDocs(collection(firestore, "inmobiliarios"));
-        const avatars: Record<string, { skinTone: number; hairColor: number; shirtColor: number; hairStyle: number }> = {};
+    const unsubscribeInmobiliarios = onSnapshot(
+      collection(firestore, "inmobiliarios"),
+      (snapshot) => {
+        const avatars: Record<string, string | undefined> = {};
 
         snapshot.docs.forEach((item) => {
-          const data = item.data();
-          const appearance = data.avatarConfig;
-          if (
-            appearance &&
-            Number.isInteger(appearance.skinTone) &&
-            appearance.skinTone >= 0 && appearance.skinTone <= 3 &&
-            Number.isInteger(appearance.hairColor) &&
-            appearance.hairColor >= 0 && appearance.hairColor <= 3 &&
-            Number.isInteger(appearance.shirtColor) &&
-            appearance.shirtColor >= 0 && appearance.shirtColor <= 3
-          ) {
-            avatars[item.id] = {
-              skinTone: appearance.skinTone,
-              hairColor: appearance.hairColor,
-              shirtColor: appearance.shirtColor,
-          hairStyle: Number.isInteger(appearance.hairStyle) && appearance.hairStyle >= 0 && appearance.hairStyle <= 2 ? appearance.hairStyle : 0,
-            };
-          }
+          const storedAvatarId = item.data().avatarId;
+          avatars[item.id] = storedAvatarId === undefined || storedAvatarId === null
+            ? DEFAULT_AVATAR_ID
+            : isAvatarId(storedAvatarId) ? storedAvatarId : undefined;
         });
 
         setInmobiliarioAvatars(avatars);
-      } catch (loadError) {
+      },
+      (loadError) => {
         console.error("Error cargando avatares de inmobiliarios:", loadError);
-      }
-    };
-
-    void loadInmobiliarioAvatars();
+      },
+    );
 
     const unsubscribeProperties = onSnapshot(
       collection(db, "propiedades"),
@@ -193,16 +174,18 @@ export default function MapaPage() {
     return () => {
       unsubscribeProperties();
       unsubscribeReferences();
+      unsubscribeInmobiliarios();
     };
   }, []);
 
   const markers = useMemo(
     () => [
       ...properties.map(({ id, title, detail, latitude, longitude, inmobiliarioId, inmobiliarioName }) => ({
-        id: `property-${id}`, title, detail, latitude, longitude, inmobiliarioId, inmobiliarioName, avatarConfig: inmobiliarioAvatars[inmobiliarioId],
+        id: `property-${id}`, type: "property" as const, title, detail, latitude, longitude, inmobiliarioId, inmobiliarioName,
+        avatarId: inmobiliarioId ? inmobiliarioAvatars[inmobiliarioId] : undefined,
       })),
       ...references.map(({ id, title, detail, latitude, longitude }) => ({
-        id: `reference-${id}`, title: `Referencia: ${title}`, detail, latitude, longitude,
+        id: `reference-${id}`, type: "reference" as const, title: `Referencia: ${title}`, detail, latitude, longitude,
       })),
     ],
     [properties, references, inmobiliarioAvatars],
