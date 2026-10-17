@@ -48,7 +48,7 @@ export default function CondominiosPage() {
 
       const [snapshot, userSnapshot] = await Promise.all([
         getDocs(condominiumsRef),
-        role === "ADMIN" ? getDocs(collection(firestore, "users")) : Promise.resolve(null),
+        role === "ADMIN" ? getDocs(collection(firestore, "inmobiliarios")) : Promise.resolve(null),
       ]);
       const loaded = snapshot.docs.map((item) => {
         const data = item.data();
@@ -59,9 +59,16 @@ export default function CondominiosPage() {
         } as Condominium;
       });
       if (role === "ADMIN" && userSnapshot) {
-        const directory = userSnapshot.docs.map((item) => item.data()).filter((data): data is DirectoryUser =>
-          typeof data.uid === "string" && typeof data.email === "string" && (data.role === "ADMIN" || data.role === "SUPERVISOR" || data.role === "AGENTE"),
-        ).sort((a, b) => a.displayName.localeCompare(b.displayName));
+        const directory = userSnapshot.docs.flatMap((item): DirectoryUser[] => {
+          const data = item.data();
+          if (typeof data.email !== "string" || (data.role !== "ADMIN" && data.role !== "SUPERVISOR" && data.role !== "AGENTE")) return [];
+          return [{
+            uid: item.id,
+            email: data.email,
+            displayName: typeof data.name === "string" ? data.name : typeof data.displayName === "string" ? data.displayName : data.email,
+            role: data.role,
+          }];
+        }).sort((a, b) => a.displayName.localeCompare(b.displayName));
         setUsers(directory);
       }
       setItems(loaded);
@@ -73,7 +80,10 @@ export default function CondominiosPage() {
     }
   }, [role, user]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const timeout = window.setTimeout(() => { void load(); }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [load]);
 
   function openCreate() {
     setEditingId(null);
@@ -117,7 +127,6 @@ export default function CondominiosPage() {
         });
         await batch.commit();
       } else {
-        const previous = items.find((item) => item.id === editingId);
         const batch = writeBatch(firestore);
         batch.update(doc(firestore, "condominios", editingId), {
           ...form,

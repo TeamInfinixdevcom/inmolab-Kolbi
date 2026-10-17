@@ -114,8 +114,12 @@ service cloud.firestore {
     }
     function assignedUserExists() {
       return request.resource.data.assignedTo is string
-        && exists(/databases/$(database)/documents/users/$(request.resource.data.assignedTo))
-        && get(/databases/$(database)/documents/users/$(request.resource.data.assignedTo)).data.role in ['ADMIN', 'SUPERVISOR', 'AGENTE'];
+        && (
+          (exists(/databases/$(database)/documents/users/$(request.resource.data.assignedTo))
+            && get(/databases/$(database)/documents/users/$(request.resource.data.assignedTo)).data.role in ['ADMIN', 'SUPERVISOR', 'AGENTE'])
+          || (exists(/databases/$(database)/documents/inmobiliarios/$(request.resource.data.assignedTo))
+            && get(/databases/$(database)/documents/inmobiliarios/$(request.resource.data.assignedTo)).data.role in ['ADMIN', 'SUPERVISOR', 'AGENTE'])
+        );
     }
     function createdByStaff() {
       return exists(/databases/$(database)/documents/users/$(resource.data.createdBy))
