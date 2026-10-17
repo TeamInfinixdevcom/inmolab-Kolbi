@@ -15,7 +15,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     "/": "dashboard",
     "/inmobiliarios": "inmobiliarios",
     "/propiedades": "propiedades",
-    "/clientes": "clientes",
+    "/agenda": "eventos",
     "/eventos": "eventos",
     "/actividad": "actividad",
     "/mapa": "mapa",

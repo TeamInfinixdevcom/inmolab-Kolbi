@@ -15,7 +15,6 @@ import { getAvatarById, getOptimizedAvatarSrc, isAvatarId } from "@/lib/avatar-c
 
 export type MapMarker = {
   id: string;
-  type?: "property" | "reference";
   title: string;
   detail: string;
   latitude: number;
@@ -33,6 +32,7 @@ export type MapPosition = {
 type RealMapProps = {
   markers: MapMarker[];
   selectedPosition?: MapPosition | null;
+  focusPosition?: MapPosition | null;
   onMapClick?: (position: MapPosition) => void;
 };
 
@@ -184,10 +184,10 @@ function MapPositionController({
 export function RealMap({
   markers,
   selectedPosition,
+  focusPosition,
   onMapClick,
 }: Readonly<RealMapProps>) {
   const propertyPin = useMemo(() => createPinIcon("🏠", "#2563eb"), []);
-  const referencePin = useMemo(() => createPinIcon("📍", "#7c3aed"), []);
   const selectedPin = useMemo(() => createPinIcon("📌", "#16a34a"), []);
   const avatarPins = useMemo(() => {
     const pins: Record<string, L.DivIcon> = {};
@@ -212,14 +212,13 @@ export function RealMap({
       />
 
       <MapClickHandler onMapClick={onMapClick} />
-      <MapPositionController position={selectedPosition} />
+      <MapPositionController position={focusPosition ?? selectedPosition} />
 
-      {/* Propiedades: pin azul con casa */}
       {markers.map((marker) => (
         <Marker
           key={marker.id}
           position={[marker.latitude, marker.longitude]}
-          icon={avatarPins[marker.id] ?? (marker.type === "reference" ? referencePin : propertyPin)}
+          icon={avatarPins[marker.id] ?? propertyPin}
         >
           <Popup>
             <strong>{marker.title}</strong>

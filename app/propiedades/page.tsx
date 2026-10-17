@@ -5,12 +5,14 @@ import {
   Check,
   Edit3,
   Eye,
+  MapPin,
   Plus,
   Search,
   ToggleLeft,
   ToggleRight,
   X,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   addDoc,
@@ -27,6 +29,12 @@ import { useRBAC } from "@/components/auth/rbac-provider";
 import { db } from "@/lib/firebase";
 import { hasPermission } from "@/lib/rbac";
 import { creationAudit, updateAudit } from "@/lib/firestore-audit";
+import type { MapPosition } from "@/components/mapa/real-map";
+
+const RealMap = dynamic(
+  () => import("@/components/mapa/real-map").then((module) => module.RealMap),
+  { ssr: false },
+);
 
 type PropertyStatus = "Activa" | "Inactiva";
 
@@ -63,6 +71,8 @@ type Property = {
   registrationNote: string;
   observations: string;
   status: PropertyStatus;
+  latitude: string;
+  longitude: string;
   inmobiliarioId: string;
   inmobiliarioName: string;
   createdAt?: string;
@@ -110,6 +120,8 @@ const emptyForm: PropertyForm = {
   registrationNote: "",
   observations: "",
   status: "Activa",
+  latitude: "",
+  longitude: "",
   inmobiliarioId: "",
 };
 
@@ -135,6 +147,8 @@ const fieldLabels: Record<keyof PropertyForm, string> = {
   registrationNote: "Nota/actividad del registro",
   observations: "Observaciones",
   status: "Estado",
+  latitude: "Latitud",
+  longitude: "Longitud",
   inmobiliarioId: "Responsable",
 };
 
@@ -176,6 +190,8 @@ function mapProperty(id: string, data: Record<string, unknown>, agents: Inmobili
     registrationNote: text(data.registrationNote),
     observations: text(data.observations ?? data.description),
     status: data.status === "Inactiva" ? "Inactiva" : "Activa",
+    latitude: text(data.latitude),
+    longitude: text(data.longitude),
     inmobiliarioId,
     inmobiliarioName: (agents.find((agent) => agent.id === inmobiliarioId)?.name ?? text(data.inmobiliarioName)) || "Sin asignar",
     createdAt: text(data.createdAt),
@@ -208,6 +224,7 @@ export default function PropiedadesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -263,6 +280,17 @@ export default function PropiedadesPage() {
       && (statusFilter === "Todas" || property.status === statusFilter);
   }), [properties, query, statusFilter]);
 
+  const selectedMapPosition = useMemo<MapPosition | null>(() => {
+    if (!form.latitude.trim() || !form.longitude.trim()) return null;
+    const latitude = Number(form.latitude);
+    const longitude = Number(form.longitude);
+    if (
+      !Number.isFinite(latitude) || !Number.isFinite(longitude) ||
+      latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180
+    ) return null;
+    return { latitude, longitude };
+  }, [form.latitude, form.longitude]);
+
   function updateField<K extends keyof PropertyForm>(field: K, value: PropertyForm[K]) {
     setForm((current) => ({ ...current, [field]: value }));
   }
@@ -270,6 +298,7 @@ export default function PropiedadesPage() {
   function openCreate() {
     setEditingId(null);
     setForm({ ...emptyForm, inmobiliarioId: user?.uid ?? "" });
+    setShowLocationPicker(false);
     setSelected(null);
     setError("");
     setShowForm(true);
@@ -298,8 +327,11 @@ export default function PropiedadesPage() {
       registrationNote: property.registrationNote,
       observations: property.observations,
       status: property.status,
+      latitude: property.latitude,
+      longitude: property.longitude,
       inmobiliarioId: property.inmobiliarioId,
     });
+    setShowLocationPicker(false);
     setSelected(null);
     setError("");
     setShowForm(true);
@@ -324,6 +356,24 @@ export default function PropiedadesPage() {
       return;
     }
 
+    const hasLatitude = form.latitude.trim() !== "";
+    const hasLongitude = form.longitude.trim() !== "";
+    const latitude = hasLatitude ? Number(form.latitude) : undefined;
+    const longitude = hasLongitude ? Number(form.longitude) : undefined;
+    if (hasLatitude !== hasLongitude) {
+      setError("Para ubicar el condominio, completá latitud y longitud.");
+      return;
+    }
+    if (
+      hasLatitude && hasLongitude &&
+      (latitude === undefined || longitude === undefined ||
+        !Number.isFinite(latitude) || !Number.isFinite(longitude) ||
+        latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180)
+    ) {
+      setError("Revisá las coordenadas: latitud entre -90 y 90, longitud entre -180 y 180.");
+      return;
+    }
+
     setSaving(true);
     setError("");
     const agent = inmobiliarios.find((item) => item.id === form.inmobiliarioId);
@@ -331,6 +381,9 @@ export default function PropiedadesPage() {
     const previous = editingId ? properties.find((property) => property.id === editingId) : undefined;
     const payload = {
       ...form,
+      latitude: latitude ?? null,
+      longitude: longitude ?? null,
+      title: form.condominiumName.trim(),
       condominiumName: form.condominiumName.trim(),
       administrator: form.administrator.trim(),
       administratorEmail: form.administratorEmail.trim(),
@@ -455,6 +508,33 @@ export default function PropiedadesPage() {
               <label className="text-sm font-medium">Servicios retirados<input min="0" type="number" value={form.removedServices} onChange={(event) => updateField("removedServices", Number(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium">Responsable<input readOnly value={editingId ? (properties.find((property) => property.id === editingId)?.inmobiliarioName || "Usuario creador") : (user?.email ?? "Usuario actual")} className="mt-2 h-10 w-full rounded-md border bg-muted px-3 font-normal text-muted-foreground" /></label>
               <label className="text-sm font-medium">Estado<select value={form.status} onChange={(event) => updateField("status", event.target.value as PropertyStatus)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary"><option>Activa</option><option>Inactiva</option></select></label>
+              <section aria-labelledby="property-location-title" className="space-y-3 rounded-lg border p-4 sm:col-span-2 lg:col-span-3">
+                <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+                  <div>
+                    <h3 id="property-location-title" className="text-sm font-semibold">Ubicación en el mapa</h3>
+                    <p className="text-xs text-muted-foreground">Opcional. Elegí un punto para que el condominio aparezca en el mapa con tu avatar.</p>
+                  </div>
+                  <Button type="button" variant="outline" onClick={() => setShowLocationPicker((visible) => !visible)}>
+                    <MapPin size={16} className="mr-2" />{showLocationPicker ? "Ocultar mapa" : "Elegir en el mapa"}
+                  </Button>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="text-sm font-medium">Latitud<input type="number" step="any" min="-90" max="90" value={form.latitude} onChange={(event) => updateField("latitude", event.target.value)} placeholder="9.9281" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+                  <label className="text-sm font-medium">Longitud<input type="number" step="any" min="-180" max="180" value={form.longitude} onChange={(event) => updateField("longitude", event.target.value)} placeholder="-84.0907" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+                </div>
+                {showLocationPicker && (
+                  <div className="h-[430px] overflow-hidden rounded-lg border">
+                    <RealMap
+                      markers={[]}
+                      selectedPosition={selectedMapPosition}
+                      onMapClick={(position: MapPosition) => {
+                        updateField("latitude", position.latitude.toFixed(6));
+                        updateField("longitude", position.longitude.toFixed(6));
+                      }}
+                    />
+                  </div>
+                )}
+              </section>
               <label className="text-sm font-medium sm:col-span-2 lg:col-span-3">Nota/actividad del registro<textarea value={form.registrationNote} onChange={(event) => updateField("registrationNote", event.target.value)} rows={3} placeholder="Describe la gestión o actividad realizada..." className="mt-2 w-full rounded-md border bg-background px-3 py-2 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium sm:col-span-2 lg:col-span-3">Observaciones<textarea value={form.observations} onChange={(event) => updateField("observations", event.target.value)} rows={3} placeholder="Gustos, necesidades o información relevante..." className="mt-2 w-full rounded-md border bg-background px-3 py-2 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <div className="flex justify-end gap-2 sm:col-span-2 lg:col-span-3"><Button type="button" variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar condominio"}</Button></div>
