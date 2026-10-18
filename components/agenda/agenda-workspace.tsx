@@ -31,6 +31,7 @@ import { creationAudit, updateAudit } from "@/lib/firestore-audit";
 import { db } from "@/lib/firebase";
 import { formatActivityDate, formatEventDateTime, getCostaRicaDateTime, isEventInPast, isTaskOverdue, isValidDateTime } from "@/lib/agenda";
 import { hasPermission } from "@/lib/rbac";
+import { statusBadgeClass } from "@/lib/status-colors";
 
 type AgendaView = "tareas" | "eventos" | "actividad";
 type TaskStatus = "Pendiente" | "En progreso" | "Completada";
@@ -108,6 +109,26 @@ function taskStatus(value: unknown): TaskStatus {
 
 function taskPriority(value: unknown): TaskPriority {
   return value === "Baja" || value === "Alta" ? value : "Media";
+}
+
+function taskColumnTone(status: TaskStatus): string {
+  if (status === "En progreso") return "border-[#cfe1d2] bg-[#edf5ee] text-[#28583b]";
+  if (status === "Completada") return "border-[#d1e3e1] bg-[#eef5f3] text-[#24534c]";
+  return "border-[#e9dfc5] bg-[#faf6e9] text-[#705d2c]";
+}
+
+function taskPriorityTone(priority: TaskPriority): string {
+  if (priority === "Alta") return "bg-[#f7e7de] text-[#8e4d32]";
+  if (priority === "Baja") return "bg-[#e9f0e8] text-[#58705c]";
+  return "bg-[#f5efd9] text-[#7b6425]";
+}
+
+function eventKindTone(kind: string): { badge: string; dot: string; border: string } {
+  const value = kind.toLocaleLowerCase("es-CR");
+  if (value.includes("visita")) return { badge: "border-[#cfe3d2] bg-[#e9f4e9] text-[#28613c]", dot: "bg-[#4e8e5b]", border: "border-l-[#4e8e5b]" };
+  if (value.includes("llamada")) return { badge: "border-[#eadbb5] bg-[#f5efd9] text-[#735d1f]", dot: "bg-[#b08a37]", border: "border-l-[#b08a37]" };
+  if (value.includes("seguimiento")) return { badge: "border-[#f0d6c5] bg-[#f8e9de] text-[#8d5635]", dot: "bg-[#c4774d]", border: "border-l-[#c4774d]" };
+  return { badge: "border-[#d1e3e1] bg-[#eaf2ef] text-[#24534c]", dot: "bg-[#3e7767]", border: "border-l-[#3e7767]" };
 }
 
 function eventStatus(value: unknown): EventStatus {
@@ -654,20 +675,20 @@ export function AgendaWorkspace({ initialView = "tareas" }: Readonly<{ initialVi
             <div className="grid items-start gap-4 md:grid-cols-3">
               {taskStatuses.map((status) => {
                 const inColumn = visibleTasks.filter((task) => task.status === status);
-                return <section key={status} aria-label={`Tareas ${status}`} className="min-h-48 rounded-xl bg-muted/40 p-3">
-                  <h2 className="mb-3 flex items-center justify-between px-1 text-sm font-semibold">{status}<span className="rounded-full bg-background px-2 py-0.5 text-xs text-muted-foreground">{inColumn.length}</span></h2>
+                return <section key={status} aria-label={`Tareas ${status}`} className={`min-h-48 rounded-xl border p-3 ${taskColumnTone(status)}`}>
+                  <h2 className="mb-3 flex items-center justify-between px-1 text-sm font-semibold">{status}<span className="rounded-full bg-white/80 px-2 py-0.5 text-xs text-foreground/70">{inColumn.length}</span></h2>
                   <div className="space-y-3">
                     {inColumn.map((task) => {
                       const overdue = isTaskOverdue(task, clock.date);
                       const canEdit = taskCanEdit(task);
-                      return <article key={task.id} className={`rounded-lg border bg-card p-3 shadow-sm ${overdue ? "border-red-300" : ""}`}>
+                      return <article key={task.id} className={`rounded-lg border border-l-4 bg-card p-3 text-foreground shadow-sm ${overdue ? "border-red-300" : status === "Pendiente" ? "border-l-[#b08a37]" : status === "En progreso" ? "border-l-[#4e8e5b]" : "border-l-[#3e7767]"}`}>
                         <div className="flex items-start justify-between gap-2">
                           <button type="button" onClick={() => setSelectedTask(task)} className="text-left font-semibold hover:text-primary">{task.title}</button>
                           {canEdit && <button type="button" onClick={() => openEditTask(task)} aria-label={`Editar tarea ${task.title}`} className="rounded p-1 text-muted-foreground hover:bg-muted"><Pencil size={15} /></button>}
                         </div>
                         {task.description && <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-sm text-muted-foreground">{task.description}</p>}
                         <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                          <span className={`rounded-full px-2 py-1 ${task.priority === "Alta" ? "bg-red-100 text-red-700" : task.priority === "Baja" ? "bg-muted text-muted-foreground" : "bg-amber-100 text-amber-800"}`}>Prioridad {task.priority.toLowerCase()}</span>
+                          <span className={`rounded-full px-2 py-1 ${taskPriorityTone(task.priority)}`}>Prioridad {task.priority.toLowerCase()}</span>
                           {overdue && <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-1 font-medium text-red-700"><AlertTriangle size={13} />Atrasada</span>}
                         </div>
                         <div className="mt-3 space-y-1 text-xs text-muted-foreground">
@@ -735,11 +756,16 @@ export function AgendaWorkspace({ initialView = "tareas" }: Readonly<{ initialVi
                 <div className="grid grid-cols-7 gap-1 text-center text-xs text-muted-foreground">{["L", "M", "X", "J", "V", "S", "D"].map((day, index) => <span key={`${day}-${index}`} className="py-2" aria-label={["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"][index]}>{day}</span>)}</div>
                 <div className="grid grid-cols-7 gap-1">
                   {monthDays.map(({ date, inMonth }) => {
-                    const count = calendarEvents.filter((event) => event.date === date).length;
-                    return <button key={date} type="button" aria-label={`${date}${count ? `, ${count} eventos` : ""}`} aria-pressed={selectedEventDate === date} onClick={() => setSelectedEventDate(selectedEventDate === date ? "" : date)} className={`relative min-h-10 rounded-md text-sm ${selectedEventDate === date ? "bg-primary text-primary-foreground" : inMonth ? "hover:bg-muted" : "text-muted-foreground/50 hover:bg-muted"}`}>
-                      {monthDay(date)}{count > 0 && <span aria-hidden="true" className={`absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full ${selectedEventDate === date ? "bg-primary-foreground" : "bg-primary"}`} />}
+                    const dayEvents = calendarEvents.filter((event) => event.date === date);
+                    const count = dayEvents.length;
+                    const eventDots = [...new Set(dayEvents.map((event) => eventKindTone(event.kind).dot))].slice(0, 3);
+                    return <button key={date} type="button" aria-label={`${date}${count ? `, ${count} eventos` : ""}`} aria-pressed={selectedEventDate === date} onClick={() => setSelectedEventDate(selectedEventDate === date ? "" : date)} className={`relative min-h-10 rounded-md text-sm transition-colors ${selectedEventDate === date ? "bg-primary text-primary-foreground" : inMonth ? "hover:bg-[#edf4ec]" : "text-muted-foreground/50 hover:bg-muted"}`}>
+                      {monthDay(date)}{count > 0 && <span aria-hidden="true" className="absolute bottom-1 left-1/2 flex -translate-x-1/2 items-center gap-0.5">{eventDots.map((dot, index) => <span key={`${date}-${index}`} className={`h-1.5 w-1.5 rounded-full ${selectedEventDate === date ? "bg-primary-foreground" : dot}`} />)}</span>}
                     </button>;
                   })}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1.5 text-[11px] text-muted-foreground" aria-label="Colores por tipo de evento">
+                  {["Reunión", "Visita", "Llamada", "Seguimiento"].map((kind) => <span key={kind} className="inline-flex items-center gap-1.5"><span aria-hidden="true" className={`h-2 w-2 rounded-full ${eventKindTone(kind).dot}`} />{kind}</span>)}
                 </div>
                 {selectedEventDate && <button type="button" onClick={() => setSelectedEventDate("")} className="mt-3 text-xs font-medium text-primary hover:underline">Quitar filtro de día · {selectedEventDate}</button>}
               </div>
@@ -750,10 +776,11 @@ export function AgendaWorkspace({ initialView = "tareas" }: Readonly<{ initialVi
                   {filteredEvents.map((event) => {
                     const canEditEvent = canUpdateEvents && (role !== "AGENTE" || event.createdBy === user?.uid);
                     const past = isEventInPast(event, clock);
-                    return <article key={event.id} className="rounded-lg border p-4">
+                    const kindTone = eventKindTone(event.kind);
+                    return <article key={event.id} className={`rounded-lg border border-l-4 p-4 ${kindTone.border}`}>
                       <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
-                        <div><p className="font-semibold">{event.title}</p><p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground"><Clock3 size={14} />{formatEventDateTime(event.date, event.time)} · {event.kind}</p></div>
-                        <span className={`w-fit rounded-full px-2.5 py-1 text-xs ${event.status === "Completado" ? "bg-emerald-100 text-emerald-800" : event.status === "Cancelado" ? "bg-muted text-muted-foreground" : "bg-blue-100 text-blue-800"}`}>{event.status}{past ? " · Pasado" : " · Próximo"}</span>
+                        <div><p className="font-semibold">{event.title}</p><p className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground"><Clock3 size={14} />{formatEventDateTime(event.date, event.time)}<span className={`rounded-full border px-2 py-0.5 text-[11px] ${kindTone.badge}`}>{event.kind}</span></p></div>
+                        <span className={`w-fit rounded-full px-2.5 py-1 text-xs ${statusBadgeClass(event.status)}`}>{event.status}{past ? " · Pasado" : " · Próximo"}</span>
                       </div>
                       {event.description && <p className="mt-3 whitespace-pre-wrap text-sm text-muted-foreground">{event.description}</p>}
                       <div className="mt-3 space-y-1 text-xs text-muted-foreground">

@@ -49,19 +49,19 @@ export function Sidebar() {
         {open ? <X size={20} /> : <Menu size={20} />}
       </button>
       {open && <div className="fixed inset-0 z-10 bg-black/30 lg:hidden" onClick={() => setOpen(false)} />}
-      <aside className={cn("fixed inset-y-0 left-0 z-20 flex w-64 flex-col border-r bg-card px-4 py-6 transition-transform lg:translate-x-0", open ? "translate-x-0" : "-translate-x-full")}>
-        <Link href="/" className="mb-10 flex items-center gap-2 px-2 text-lg font-semibold" onClick={() => setOpen(false)}>
-          <span className="rounded-lg bg-primary p-2 text-primary-foreground"><Building2 size={20} /></span>
-          InmoLab <span className="text-primary">Kölbi</span>
+      <aside className={cn("fixed inset-y-0 left-0 z-20 flex w-64 flex-col border-r border-[#29483c] bg-[#123329] px-4 py-6 text-[#f5f2e8] shadow-xl transition-transform lg:translate-x-0", open ? "translate-x-0" : "-translate-x-full")}>
+        <Link href="/" className="mb-8 flex items-center gap-2 px-2 text-lg font-semibold" onClick={() => setOpen(false)}>
+          <span className="rounded-lg bg-[#eadcb8] p-2 text-[#123329]"><Building2 size={20} /></span>
+          <span>InmoLab <span className="text-[#eadcb8]">Kölbi</span></span>
         </Link>
         <nav className="space-y-1">
           {visibleNavigation.map(({ href, label, adminLabel, icon: Icon }) => (
-            <Link key={href} href={href} onClick={() => setOpen(false)} className={cn("flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground", pathname === href && "bg-primary/10 text-primary")}>
+            <Link key={href} href={href} onClick={() => setOpen(false)} className={cn("flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[#d5e0d9] transition-colors hover:bg-white/10 hover:text-white", pathname === href && "bg-white/10 text-[#eadcb8] ring-1 ring-inset ring-[#eadcb8]/25")}>
               {href === "/perfil" && user ? (
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border bg-background">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-[#eadcb8] bg-white/10">
                   <AvatarImage
                     avatarId={avatarId ?? DEFAULT_AVATAR_ID}
-                    size={28}
+                    size={40}
                     alt={`Avatar de ${user.displayName || "usuario"}`}
                     decorative
                     className="rounded-full"
@@ -70,14 +70,19 @@ export function Sidebar() {
               ) : (
                 <Icon size={18} />
               )}
-              {role === "ADMIN" ? adminLabel ?? label : label}
+              {href === "/perfil" && user ? (
+                <span className="min-w-0 flex-1">
+                  <span className="block">{role === "ADMIN" ? adminLabel ?? label : label}</span>
+                  <span className="block truncate text-xs font-normal text-[#b9c9c0]">{user.displayName || user.email || "Mi cuenta"}</span>
+                </span>
+              ) : role === "ADMIN" ? adminLabel ?? label : label}
             </Link>
           ))}
         </nav>
-        <p className="mt-8 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <p className="mt-8 px-3 text-xs font-semibold uppercase tracking-wider text-[#c9d4cd]">
           Rol: {role}
         </p>
-        <button type="button" onClick={() => void handleSignOut()} className="mt-auto flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground">
+        <button type="button" onClick={() => void handleSignOut()} className="mt-auto flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[#d5e0d9] transition-colors hover:bg-white/10 hover:text-white">
           <LogOut size={18} /> Cerrar sesión
         </button>
       </aside>

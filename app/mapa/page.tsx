@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AvatarImage } from "@/components/avatar/avatar-image";
 import type { MapMarker, MapPosition } from "@/components/mapa/real-map";
 import { db } from "@/lib/firebase";
 import { DEFAULT_AVATAR_ID, isAvatarId } from "@/lib/avatar-catalog";
@@ -28,6 +29,7 @@ function coordinate(value: unknown): number | undefined {
 export default function MapaPage() {
   const [properties, setProperties] = useState<Property[]>([]);
   const [inmobiliarioAvatars, setInmobiliarioAvatars] = useState<Record<string, string | undefined>>({});
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
   const [focusedPosition, setFocusedPosition] = useState<MapPosition | null>(null);
   const [loading, setLoading] = useState(Boolean(db));
   const [error, setError] = useState(db ? "" : "Firebase no está configurado.");
@@ -109,6 +111,10 @@ export default function MapaPage() {
     })),
     [properties, inmobiliarioAvatars],
   );
+  const selectedProperty = properties.find((property) => property.id === selectedPropertyId) ?? properties[0] ?? null;
+  const selectedAvatarId = selectedProperty?.inmobiliarioId
+    ? inmobiliarioAvatars[selectedProperty.inmobiliarioId] ?? DEFAULT_AVATAR_ID
+    : DEFAULT_AVATAR_ID;
 
   return (
     <section className="space-y-6">
@@ -133,7 +139,7 @@ export default function MapaPage() {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>Propiedades ubicadas</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Propiedad seleccionada</CardTitle></CardHeader>
           <CardContent>
             {loading ? (
               <p className="py-4 text-center text-sm text-muted-foreground">Cargando propiedades...</p>
@@ -142,22 +148,45 @@ export default function MapaPage() {
                 Aún no hay propiedades con coordenadas. Asigná la ubicación al crear o editar una propiedad.
               </p>
             ) : (
-              <div className="max-h-[560px] space-y-3 overflow-y-auto">
-                {properties.map((property) => (
-                  <button
-                    type="button"
-                    key={property.id}
-                    className="w-full rounded-md border p-3 text-left hover:bg-muted"
-                    onClick={() => setFocusedPosition({ latitude: property.latitude, longitude: property.longitude })}
-                  >
-                    <p className="font-medium">{property.title}</p>
-                    <p className="text-sm text-muted-foreground">{property.detail}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {property.inmobiliarioName ? `${property.inmobiliarioName} · ` : ""}{property.status}
-                    </p>
-                  </button>
-                ))}
-              </div>
+              <>
+                {selectedProperty && <div className="mb-4 flex items-center gap-4 rounded-xl border border-[#d9e6dc] bg-[#f5f7ef] p-4">
+                  <span className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-white shadow-md ring-2 ring-[#d7c89f]">
+                    <AvatarImage
+                      avatarId={selectedAvatarId}
+                      size={96}
+                      alt={`Avatar de ${selectedProperty.inmobiliarioName || "la persona responsable"}`}
+                      className="rounded-full"
+                    />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[#617868]">Responsable</p>
+                    <p className="mt-1 truncate font-semibold text-[#173b2e]">{selectedProperty.inmobiliarioName || "Agente inmobiliario"}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{selectedProperty.title}</p>
+                    <span className="mt-2 inline-flex rounded-full bg-[#e1eddf] px-2.5 py-1 text-xs font-medium text-[#245c3c]">{selectedProperty.status}</span>
+                  </div>
+                </div>}
+                <h3 className="mb-2 text-sm font-semibold">Propiedades ubicadas ({properties.length})</h3>
+                <div className="max-h-[390px] space-y-2 overflow-y-auto">
+                  {properties.map((property) => (
+                    <button
+                      type="button"
+                      key={property.id}
+                      aria-pressed={selectedProperty?.id === property.id}
+                      className={`w-full rounded-lg border p-3 text-left transition-colors ${selectedProperty?.id === property.id ? "border-[#6d9279] bg-[#edf4ec]" : "hover:bg-muted/60"}`}
+                      onClick={() => {
+                        setSelectedPropertyId(property.id);
+                        setFocusedPosition({ latitude: property.latitude, longitude: property.longitude });
+                      }}
+                    >
+                      <p className="font-medium">{property.title}</p>
+                      <p className="text-sm text-muted-foreground">{property.detail}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {property.inmobiliarioName ? `${property.inmobiliarioName} · ` : ""}{property.status}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </>
             )}
           </CardContent>
         </Card>
