@@ -25,6 +25,7 @@ import {
 } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PaginationControls } from "@/components/ui/pagination-controls";
 import { useRBAC } from "@/components/auth/rbac-provider";
 import { db } from "@/lib/firebase";
 import { hasPermission, isRole } from "@/lib/rbac";
@@ -238,6 +239,8 @@ export default function PropiedadesPage() {
   const [selected, setSelected] = useState<Property | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"Todas" | PropertyStatus>("Todas");
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 12;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -328,6 +331,16 @@ export default function PropiedadesPage() {
     return haystack.includes(query.toLowerCase())
       && (statusFilter === "Todas" || property.status === statusFilter);
   }), [properties, query, statusFilter]);
+  const pageCount = Math.max(1, Math.ceil(filteredProperties.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, pageCount);
+  const paginatedProperties = filteredProperties.slice(
+    (safeCurrentPage - 1) * pageSize,
+    safeCurrentPage * pageSize,
+  );
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [query, statusFilter]);
 
   const selectedMapPosition = useMemo<MapPosition | null>(() => {
     if (!form.latitude.trim() || !form.longitude.trim()) return null;
@@ -653,14 +666,14 @@ export default function PropiedadesPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {loading ? <p className="py-10 text-center text-sm text-muted-foreground">Cargando condominios...</p> : !db ? <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">Firebase aún no está conectado.</p> : filteredProperties.length === 0 ? <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No hay condominios que coincidan con los filtros.</p> : <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{filteredProperties.map((property) => (
+          {loading ? <p className="py-10 text-center text-sm text-muted-foreground">Cargando condominios...</p> : !db ? <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">Firebase aún no está conectado.</p> : filteredProperties.length === 0 ? <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No hay condominios que coincidan con los filtros.</p> : <><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{paginatedProperties.map((property) => (
             <article key={property.id} className="rounded-xl border p-4 transition-shadow hover:shadow-md">
               <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-2"><span className="rounded-lg bg-primary/10 p-2 text-primary"><Building2 size={18} /></span><div><h2 className="font-semibold">{property.condominiumName || "Sin nombre"}</h2><p className="text-xs text-muted-foreground">Administrador: {property.administrator || "Sin asignar"}</p></div></div><span className={`rounded-full px-2 py-1 text-xs font-medium ${statusBadgeClass(property.status)}`}>{property.status}</span></div>
               <div className="mt-4 grid grid-cols-2 gap-2 text-sm"><div><p className="text-muted-foreground">Servicios activos</p><p className="font-semibold">{property.activeServices}</p></div><div><p className="text-muted-foreground">Casas construidas</p><p className="font-semibold">{property.builtHouses}</p></div><div><p className="text-muted-foreground">NAP</p><p className="font-semibold">{property.nap || "—"}</p></div><div><p className="text-muted-foreground">Retirados</p><p className="font-semibold">{property.removedServices}</p></div></div>
               <p className="mt-4 border-t pt-3 text-xs text-muted-foreground">Última actualización: {property.updatedByName || property.createdByName || "Usuario sin nombre disponible"}</p>
               <div className="mt-4 flex justify-between gap-2"><Button variant="outline" size="sm" onClick={() => setSelected(property)}><Eye size={15} className="mr-1" /> Bitácora</Button>{canUpdate && (role !== "AGENTE" || property.createdBy === user?.uid) && <><Button variant="ghost" size="icon" onClick={() => openEdit(property)} aria-label={`Editar ${property.condominiumName}`}><Edit3 size={16} /></Button><Button variant="ghost" size="icon" onClick={() => void toggleStatus(property)} aria-label="Cambiar estado">{property.status === "Activa" ? <ToggleRight size={20} className="text-[#4e8e5b]" /> : <ToggleLeft size={20} className="text-[#858c86]" />}</Button></>}</div>
             </article>
-          ))}</div>}
+          ))}</div><PaginationControls page={safeCurrentPage} pageCount={pageCount} pageSize={pageSize} itemCount={filteredProperties.length} onPageChange={setCurrentPage} /></>}
         </CardContent>
       </Card>
 
