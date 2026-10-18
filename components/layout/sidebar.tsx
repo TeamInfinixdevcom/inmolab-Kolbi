@@ -85,6 +85,12 @@ export function Sidebar() {
         <button type="button" onClick={() => void handleSignOut()} className="mt-auto flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[#d5e0d9] transition-colors hover:bg-white/10 hover:text-white">
           <LogOut size={18} /> Cerrar sesión
         </button>
+        <p
+          className="mt-2 border-t border-white/10 px-2 pt-2 text-right text-[11px] tracking-wide text-[#eadcb8]"
+          style={{ fontFamily: '"Segoe Script", "Brush Script MT", cursive' }}
+        >
+          InmoLab <span className="text-[#b9c9c0]">powered by</span> Infinix Dev
+        </p>
       </aside>
     </>
   );
