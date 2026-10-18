@@ -131,11 +131,11 @@ function createPinIcon(emoji: string, color: string) {
 function createAvatarPin(avatarId: string) {
   const avatar = getAvatarById(avatarId);
   const avatarSrc = getOptimizedAvatarSrc(avatarId, 64);
-  if (!avatar || !avatarSrc) return createPinIcon("🏠", "#2563eb");
+  if (!avatar || !avatarSrc) return createPinIcon("🏠", "#00843d");
 
   return L.divIcon({
     className: "inmolab-avatar-pin",
-    html: pinElement("#2563eb", "🏠", avatarSrc),
+    html: pinElement("#00843d", "🏠", avatarSrc),
     iconSize: [44, 54],
     iconAnchor: [22, 48],
     popupAnchor: [0, -45],
@@ -187,7 +187,7 @@ export function RealMap({
   focusPosition,
   onMapClick,
 }: Readonly<RealMapProps>) {
-  const propertyPin = useMemo(() => createPinIcon("🏠", "#2563eb"), []);
+  const propertyPin = useMemo(() => createPinIcon("🏠", "#00843d"), []);
   const selectedPin = useMemo(() => createPinIcon("📌", "#16a34a"), []);
   const avatarPins = useMemo(() => {
     const pins: Record<string, L.DivIcon> = {};
