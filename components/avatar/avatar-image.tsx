@@ -38,6 +38,7 @@ export function AvatarImage({
         <Image
           src={avatar.src}
           alt={decorative ? "" : alt}
+          unoptimized
           {...(fill ? { fill: true } : { width: size, height: size })}
           sizes={`${size}px`}
           className="h-full w-full object-cover"

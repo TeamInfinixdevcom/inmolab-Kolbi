@@ -624,7 +624,7 @@ export function AgendaWorkspace({ initialView = "tareas" }: Readonly<{ initialVi
             aria-selected={activeView === id}
             aria-controls={`agenda-panel-${id}`}
             onClick={() => { setView(id); setError(""); setNotice(""); }}
-            className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium ${activeView === id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
+            className={`ios-interactive inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium ${activeView === id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
           >
             <Icon size={16} />{label}
           </button>
@@ -684,7 +684,7 @@ export function AgendaWorkspace({ initialView = "tareas" }: Readonly<{ initialVi
                       return <article key={task.id} className={`rounded-lg border border-l-4 bg-card p-3 text-foreground shadow-sm ${overdue ? "border-red-300" : status === "Pendiente" ? "border-l-[#b08a37]" : status === "En progreso" ? "border-l-[#4e8e5b]" : "border-l-[#3e7767]"}`}>
                         <div className="flex items-start justify-between gap-2">
                           <button type="button" onClick={() => setSelectedTask(task)} className="text-left font-semibold hover:text-primary">{task.title}</button>
-                          {canEdit && <button type="button" onClick={() => openEditTask(task)} aria-label={`Editar tarea ${task.title}`} className="rounded p-1 text-muted-foreground hover:bg-muted"><Pencil size={15} /></button>}
+                          {canEdit && <button type="button" onClick={() => openEditTask(task)} aria-label={`Editar tarea ${task.title}`} className="ios-interactive rounded p-1 text-muted-foreground hover:bg-muted"><Pencil size={15} /></button>}
                         </div>
                         {task.description && <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-sm text-muted-foreground">{task.description}</p>}
                         <div className="mt-3 flex flex-wrap gap-2 text-xs">
@@ -714,7 +714,7 @@ export function AgendaWorkspace({ initialView = "tareas" }: Readonly<{ initialVi
         <div id="agenda-panel-eventos" role="tabpanel" className="space-y-5">
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
             <div className="flex flex-wrap gap-2" aria-label="Filtrar agenda">
-              {(["upcoming", "past", "all"] as EventScope[]).map((scope) => <button key={scope} type="button" aria-pressed={eventScope === scope} onClick={() => { setEventScope(scope); setSelectedEventDate(""); }} className={`rounded-md px-3 py-2 text-sm ${eventScope === scope ? "bg-primary text-primary-foreground" : "border bg-background text-muted-foreground"}`}>{scope === "upcoming" ? "Próximos" : scope === "past" ? "Pasados" : "Todos"}</button>)}
+              {(["upcoming", "past", "all"] as EventScope[]).map((scope) => <button key={scope} type="button" aria-pressed={eventScope === scope} onClick={() => { setEventScope(scope); setSelectedEventDate(""); }} className={`ios-interactive rounded-md px-3 py-2 text-sm ${eventScope === scope ? "bg-primary text-primary-foreground" : "border bg-background text-muted-foreground"}`}>{scope === "upcoming" ? "Próximos" : scope === "past" ? "Pasados" : "Todos"}</button>)}
             </div>
             {canCreateEvents && <Button onClick={openNewEvent}><Plus size={16} className="mr-2" />Nuevo evento</Button>}
           </div>
@@ -759,7 +759,7 @@ export function AgendaWorkspace({ initialView = "tareas" }: Readonly<{ initialVi
                     const dayEvents = calendarEvents.filter((event) => event.date === date);
                     const count = dayEvents.length;
                     const eventDots = [...new Set(dayEvents.map((event) => eventKindTone(event.kind).dot))].slice(0, 3);
-                    return <button key={date} type="button" aria-label={`${date}${count ? `, ${count} eventos` : ""}`} aria-pressed={selectedEventDate === date} onClick={() => setSelectedEventDate(selectedEventDate === date ? "" : date)} className={`relative min-h-10 rounded-md text-sm transition-colors ${selectedEventDate === date ? "bg-primary text-primary-foreground" : inMonth ? "hover:bg-[#edf4ec]" : "text-muted-foreground/50 hover:bg-muted"}`}>
+                    return <button key={date} type="button" aria-label={`${date}${count ? `, ${count} eventos` : ""}`} aria-pressed={selectedEventDate === date} onClick={() => setSelectedEventDate(selectedEventDate === date ? "" : date)} className={`ios-interactive relative min-h-10 rounded-md text-sm ${selectedEventDate === date ? "bg-primary text-primary-foreground" : inMonth ? "hover:bg-[#edf4ec]" : "text-muted-foreground/50 hover:bg-muted"}`}>
                       {monthDay(date)}{count > 0 && <span aria-hidden="true" className="absolute bottom-1 left-1/2 flex -translate-x-1/2 items-center gap-0.5">{eventDots.map((dot, index) => <span key={`${date}-${index}`} className={`h-1.5 w-1.5 rounded-full ${selectedEventDate === date ? "bg-primary-foreground" : dot}`} />)}</span>}
                     </button>;
                   })}

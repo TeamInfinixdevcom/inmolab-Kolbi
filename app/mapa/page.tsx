@@ -230,7 +230,7 @@ export default function MapaPage() {
                       type="button"
                       key={property.id}
                       aria-pressed={selectedProperty?.id === property.id}
-                      className={`w-full rounded-lg border p-3 text-left transition-colors ${selectedProperty?.id === property.id ? "border-[#6d9279] bg-[#edf4ec]" : "hover:bg-muted/60"}`}
+                      className={`ios-interactive w-full rounded-lg border p-3 text-left ${selectedProperty?.id === property.id ? "border-[#6d9279] bg-[#edf4ec]" : "hover:bg-muted/60"}`}
                       onClick={() => {
                         setSelectedPropertyId(property.id);
                         setFocusedPosition({ latitude: property.latitude, longitude: property.longitude });

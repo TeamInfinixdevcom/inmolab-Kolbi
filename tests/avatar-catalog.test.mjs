@@ -46,7 +46,8 @@ test("perfil, sidebar y mapa conservan el avatar compartido y marcadores DOM seg
   assert.match(profile, /\/api\/avatar/);
   assert.match(sidebar, /AvatarImage/);
   assert.match(sidebar, /avatarId/);
-  assert.match(map, /getOptimizedAvatarSrc/);
+  assert.match(map, /avatar\?\.src/);
+  assert.doesNotMatch(map, /_next\/image/);
   assert.match(map, /avatarPins\[marker\.id\]/);
   assert.match(map, /label\.textContent\s*=\s*emoji/);
   assert.doesNotMatch(map, /dangerouslySetInnerHTML|\.innerHTML\s*=/);

@@ -16,11 +16,3 @@ export function isAvatarId(value: unknown): value is Avatar["id"] {
 export function getAvatarById(value: unknown): Avatar | undefined {
   return typeof value === "string" ? avatarsById.get(value) : undefined;
 }
-
-export function getOptimizedAvatarSrc(avatarId: string, width = 64): string | undefined {
-  const avatar = getAvatarById(avatarId);
-  if (!avatar) return undefined;
-
-  const params = new URLSearchParams({ url: avatar.src, w: String(width), q: "75" });
-  return `/_next/image?${params.toString()}`;
-}

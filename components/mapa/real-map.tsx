@@ -11,7 +11,7 @@ import {
 } from "react-leaflet";
 import L from "leaflet";
 import type { LatLngExpression } from "leaflet";
-import { getAvatarById, getOptimizedAvatarSrc, isAvatarId } from "@/lib/avatar-catalog";
+import { getAvatarById, isAvatarId } from "@/lib/avatar-catalog";
 
 export type MapMarker = {
   id: string;
@@ -130,7 +130,7 @@ function createPinIcon(emoji: string, color: string) {
 
 function createAvatarPin(avatarId: string) {
   const avatar = getAvatarById(avatarId);
-  const avatarSrc = getOptimizedAvatarSrc(avatarId, 64);
+  const avatarSrc = avatar?.src;
   if (!avatar || !avatarSrc) return createPinIcon("🏠", "#00843d");
 
   return L.divIcon({

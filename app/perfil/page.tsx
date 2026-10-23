@@ -168,7 +168,7 @@ export default function PerfilPage() {
                   aria-pressed={selected}
                   disabled={avatarLoading || saveStatus === "saving"}
                   onClick={() => void saveAvatar(avatar.id)}
-                  className={`group relative rounded-xl border p-2 text-left transition hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-wait disabled:opacity-70 ${
+                  className={`ios-interactive group relative rounded-xl border p-2 text-left hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-wait disabled:opacity-70 ${
                     selected
                       ? "border-primary bg-primary/5 ring-2 ring-primary"
                       : "border-border bg-background"

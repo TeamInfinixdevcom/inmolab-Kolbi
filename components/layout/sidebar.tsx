@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRouter } from "next/navigation";
-import { BarChart3, Building2, CalendarDays, Home, LogOut, Map, Menu, UserRound, Users, X } from "lucide-react";
+import { BarChart3, Building2, CalendarDays, Home, LogOut, Map, Menu, PieChart, UserRound, Users, X } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useRBAC } from "@/components/auth/rbac-provider";
@@ -28,6 +28,7 @@ const navigation = [
   { href: "/mapa", label: "Mapa", icon: Map, module: "mapa" },
   { href: "/perfil", label: "Mi perfil", icon: UserRound, module: "perfil" },
   { href: "/reportes", label: "Reportes", icon: BarChart3, module: "reportes" },
+  { href: "/graficas", label: "Gráficas", icon: PieChart, module: "graficas" },
 ];
 
 export function Sidebar() {
@@ -45,7 +46,7 @@ export function Sidebar() {
 
   return (
     <>
-      <button className="fixed left-4 top-4 z-30 rounded-md p-2 hover:bg-muted lg:hidden" onClick={() => setOpen(!open)} aria-label="Abrir menú">
+      <button className="ios-interactive fixed left-4 top-4 z-30 rounded-md p-2 hover:bg-muted lg:hidden" onClick={() => setOpen(!open)} aria-label="Abrir menú">
         {open ? <X size={20} /> : <Menu size={20} />}
       </button>
       {open && <div className="fixed inset-0 z-10 bg-black/30 lg:hidden" onClick={() => setOpen(false)} />}
@@ -56,7 +57,7 @@ export function Sidebar() {
         </Link>
         <nav className="space-y-1">
           {visibleNavigation.map(({ href, label, adminLabel, icon: Icon }) => (
-            <Link key={href} href={href} onClick={() => setOpen(false)} className={cn("flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[#d5e0d9] transition-colors hover:bg-white/10 hover:text-white", pathname === href && "bg-white/10 text-[#eadcb8] ring-1 ring-inset ring-[#eadcb8]/25")}>
+            <Link key={href} href={href} onClick={() => setOpen(false)} className={cn("ios-interactive flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[#d5e0d9] hover:bg-white/10 hover:text-white", pathname === href && "bg-white/10 text-[#eadcb8] ring-1 ring-inset ring-[#eadcb8]/25")}>
               {href === "/perfil" && user ? (
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-[#eadcb8] bg-white/10">
                   <AvatarImage
@@ -82,7 +83,7 @@ export function Sidebar() {
         <p className="mt-8 px-3 text-xs font-semibold uppercase tracking-wider text-[#c9d4cd]">
           Rol: {role}
         </p>
-        <button type="button" onClick={() => void handleSignOut()} className="mt-auto flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[#d5e0d9] transition-colors hover:bg-white/10 hover:text-white">
+        <button type="button" onClick={() => void handleSignOut()} className="ios-interactive mt-auto flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[#d5e0d9] hover:bg-white/10 hover:text-white">
           <LogOut size={18} /> Cerrar sesión
         </button>
         <p
