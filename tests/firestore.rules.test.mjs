@@ -19,7 +19,7 @@ const condominium = (createdBy, assignedTo, createdByRole) => ({
 
 before(async () => {
   testEnvironment = await initializeTestEnvironment({
-    projectId: "inmolab-kolbi-rules-test",
+    projectId: "demo-inmolab-kolbi-rules-test",
     firestore: {
       rules: await readFile(new URL("../firestore.rules", import.meta.url), "utf8"),
     },
@@ -52,12 +52,53 @@ before(async () => {
         displayName: "Supervisor",
         role: "SUPERVISOR",
       }),
+      database.doc("inmobiliarios/agent-a").set({
+        name: "Agente A",
+        email: "agent-a@example.com",
+        role: "AGENTE",
+        avatarId: "avatar-prof-1",
+      }),
+      database.doc("inmobiliarios/agent-b").set({
+        name: "Agente B",
+        email: "agent-b@example.com",
+        role: "AGENTE",
+      }),
     ]);
   });
 });
 
 after(async () => {
   await testEnvironment.cleanup();
+});
+
+test("los demás usuarios autorizados pueden ver una propiedad guardada y el avatar de su responsable", async () => {
+  const ownerDatabase = testEnvironment.authenticatedContext("agent-a", { role: "AGENTE" }).firestore();
+  const property = ownerDatabase.doc("propiedades/map-visible-to-roles");
+
+  await assertSucceeds(property.set({
+    condominiumName: "Condominio con ubicación",
+    latitude: 9.985405049140589,
+    longitude: -84.10539207560959,
+    inmobiliarioId: "agent-a",
+    createdBy: "agent-a",
+    createdById: "agent-a",
+    updatedBy: "agent-a",
+  }));
+  await assertSucceeds(property.update({
+    latitude: 9.99,
+    longitude: -84.11,
+    updatedBy: "agent-a",
+  }));
+
+  for (const [uid, role] of [["agent-b", "AGENTE"], ["supervisor", "SUPERVISOR"], ["admin", "ADMIN"]]) {
+    const reader = testEnvironment.authenticatedContext(uid, { role }).firestore();
+    const savedProperty = await assertSucceeds(reader.doc("propiedades/map-visible-to-roles").get());
+    const responsible = await assertSucceeds(reader.doc("inmobiliarios/agent-a").get());
+
+    assert.equal(savedProperty.data().latitude, 9.99);
+    assert.equal(savedProperty.data().inmobiliarioId, "agent-a");
+    assert.equal(responsible.data().avatarId, "avatar-prof-1");
+  }
 });
 
 test("AGENTE puede crear, leer, editar y eliminar su propio condominio", async () => {
@@ -148,4 +189,104 @@ test("AGENTE puede consultar condominios asignados a otros agentes", async () =>
     snapshot.docs.some((document) => document.id === "assigned-to-b"),
     "El agente debe poder consultar un condominio asignado a otro agente"
   );
+});
+
+const task = (createdBy, responsibleId) => ({
+  recordType: "task",
+  title: "Confirmar visita",
+  description: "Coordinar hora con el responsable.",
+  status: "Pendiente",
+  priority: "Alta",
+  responsible: responsibleId === "agent-a" ? "Agente A" : "Agente B",
+  responsibleId,
+  dueDate: "2026-10-20",
+  history: [{ id: "created", type: "Creación", date: "2026-10-16T12:00:00.000Z", user: createdBy, note: "Tarea creada." }],
+  createdBy,
+  updatedBy: createdBy,
+});
+
+test("ADMIN puede crear una tarea asignada y el AGENTE asignado puede actualizar su estado", async () => {
+  const adminDatabase = testEnvironment.authenticatedContext("admin", { role: "ADMIN" }).firestore();
+  const agentDatabase = testEnvironment.authenticatedContext("agent-a", { role: "AGENTE" }).firestore();
+  const reference = adminDatabase.doc("actividad/task-assigned");
+
+  await assertSucceeds(reference.set(task("admin", "agent-a")));
+  await assertSucceeds(agentDatabase.doc("actividad/task-assigned").update({
+    status: "En progreso",
+    history: [...task("admin", "agent-a").history, { id: "started", type: "Estado actualizado", date: "2026-10-16T13:00:00.000Z", user: "Agente A", note: "Estado cambiado a En progreso." }],
+    updatedBy: "agent-a",
+  }));
+  await assertFails(agentDatabase.doc("actividad/task-assigned").update({
+    history: task("admin", "agent-a").history,
+    updatedBy: "agent-a",
+  }));
+  await assertFails(adminDatabase.doc("actividad/task-assigned").update({
+    history: [],
+    updatedBy: "admin",
+  }));
+});
+
+test("un agente no puede crear ni reasignar una tarea a otro agente", async () => {
+  const agentADatabase = testEnvironment.authenticatedContext("agent-a", { role: "AGENTE" }).firestore();
+  const otherAgentDatabase = testEnvironment.authenticatedContext("agent-b", { role: "AGENTE" }).firestore();
+  const incorrectlyAssigned = agentADatabase.doc("actividad/task-created-for-b");
+
+  await assertFails(incorrectlyAssigned.set(task("agent-a", "agent-b")));
+
+  const assignedToA = agentADatabase.doc("actividad/task-owned-by-a");
+  await assertSucceeds(assignedToA.set(task("agent-a", "agent-a")));
+  await assertFails(assignedToA.update({
+    responsible: "Agente B",
+    responsibleId: "agent-b",
+    updatedBy: "agent-a",
+  }));
+  await assertFails(otherAgentDatabase.doc("actividad/task-owned-by-a").update({
+    status: "Completada",
+    updatedBy: "agent-b",
+  }));
+});
+
+test("la aplicación ya no puede crear marcadores de referencia", async () => {
+  const adminDatabase = testEnvironment.authenticatedContext("admin", { role: "ADMIN" }).firestore();
+  await assertFails(adminDatabase.doc("mapa_marcadores/new-reference").set({
+    title: "Punto de prueba",
+    detail: "",
+    latitude: 9.9,
+    longitude: -84.1,
+    createdBy: "admin",
+    createdByName: "Admin",
+    createdAt: new Date(),
+  }));
+});
+
+const scheduledEvent = (createdBy, responsibleId) => ({
+  title: "Visita de prueba",
+  description: "Revisar la propiedad.",
+  kind: "Visita",
+  date: "2026-10-20",
+  time: "10:30",
+  status: "Pendiente",
+  responsible: responsibleId === "agent-a" ? "Agente A" : "Agente B",
+  responsibleId,
+  participantIds: [],
+  participantNames: [],
+  client: "Persona externa",
+  property: "Condominio de prueba",
+  notes: "",
+  createdBy,
+  updatedBy: createdBy,
+});
+
+test("AGENTE puede programar su evento, pero no asignarlo a otro agente ni editar eventos ajenos", async () => {
+  const agentADatabase = testEnvironment.authenticatedContext("agent-a", { role: "AGENTE" }).firestore();
+  const agentBDatabase = testEnvironment.authenticatedContext("agent-b", { role: "AGENTE" }).firestore();
+  const ownEvent = agentADatabase.doc("eventos/agent-a-event");
+
+  await assertSucceeds(ownEvent.set(scheduledEvent("agent-a", "agent-a")));
+  await assertFails(agentADatabase.doc("eventos/assigned-to-b").set(scheduledEvent("agent-a", "agent-b")));
+  await assertFails(agentBDatabase.doc("eventos/agent-a-event").update({
+    status: "Completado",
+    updatedBy: "agent-b",
+  }));
+  await assertSucceeds(ownEvent.update({ status: "Completado", updatedBy: "agent-a" }));
 });

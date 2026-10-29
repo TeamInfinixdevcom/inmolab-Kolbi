@@ -3,19 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRouter } from "next/navigation";
-import { Activity, BarChart3, Building2, CalendarDays, Home, LogOut, Map, Menu, UserRound, Users, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { BarChart3, Building2, CalendarDays, Home, LogOut, Map, Menu, PieChart, UserRound, Users, X } from "lucide-react";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useRBAC } from "@/components/auth/rbac-provider";
 import { canAccessModule, type Module } from "@/lib/rbac";
 import { auth } from "@/lib/firebase";
 import { signOut } from "firebase/auth";
-
-import {
-  MiiAvatar,
-  defaultMiiAppearance,
-  type MiiAppearance,
-} from "@/components/avatar/mii-avatar";
+import { AvatarImage } from "@/components/avatar/avatar-image";
+import { DEFAULT_AVATAR_ID } from "@/lib/avatar-catalog";
 
 
 const navigation = [
@@ -28,74 +24,17 @@ const navigation = [
     module: "inmobiliarios",
   },
   { href: "/propiedades", label: "Propiedades", icon: Building2, module: "propiedades" },
-  { href: "/eventos", label: "Eventos", icon: CalendarDays, module: "eventos" },
-  { href: "/actividad", label: "Actividad", icon: Activity, module: "actividad" },
+  { href: "/agenda", label: "Agenda y actividad", icon: CalendarDays, module: "eventos" },
   { href: "/mapa", label: "Mapa", icon: Map, module: "mapa" },
   { href: "/perfil", label: "Mi perfil", icon: UserRound, module: "perfil" },
   { href: "/reportes", label: "Reportes", icon: BarChart3, module: "reportes" },
+  { href: "/graficas", label: "Gráficas", icon: PieChart, module: "graficas" },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { role, user } = useRBAC();
-  const [avatarAppearance, setAvatarAppearance] = useState<MiiAppearance | null>(null);
-
-  useEffect(() => {
-    if (!user) {
-      setAvatarAppearance(null);
-      return;
-    }
-
-    let cancelled = false;
-
-    async function loadAvatar() {
-      try {
-        const token = await user!.getIdToken();
-        const response = await fetch("/api/avatar", {
-          headers: { Authorization: `Bearer ${token}` },
-          cache: "no-store",
-        });
-
-        if (!response.ok) return;
-
-        const result = await response.json();
-        const appearance = result.appearance;
-
-        if (
-          !cancelled &&
-          appearance &&
-          Number.isInteger(appearance.skinTone) &&
-          appearance.skinTone >= 0 &&
-          appearance.skinTone < 4 &&
-          Number.isInteger(appearance.hairColor) &&
-          appearance.hairColor >= 0 &&
-          appearance.hairColor < 4 &&
-          Number.isInteger(appearance.shirtColor) &&
-          appearance.shirtColor >= 0 &&
-          appearance.shirtColor < 4 &&
-          Number.isInteger(appearance.hairStyle ?? 0) &&
-          (appearance.hairStyle ?? 0) >= 0 &&
-          (appearance.hairStyle ?? 0) < 3
-        ) {
-          setAvatarAppearance({
-            skinTone: appearance.skinTone,
-            hairColor: appearance.hairColor,
-            shirtColor: appearance.shirtColor,
-            hairStyle: appearance.hairStyle ?? 0,
-          });
-        }
-      } catch {
-        // Si falla la consulta, se mantiene el icono genérico.
-      }
-    }
-
-    void loadAvatar();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
+  const { role, user, avatarId } = useRBAC();
   const [open, setOpen] = useState(false);
   const visibleNavigation = navigation.filter(({ module }) => canAccessModule(role, module as Module));
 
@@ -107,39 +46,52 @@ export function Sidebar() {
 
   return (
     <>
-      <button className="fixed left-4 top-4 z-30 rounded-md p-2 hover:bg-muted lg:hidden" onClick={() => setOpen(!open)} aria-label="Abrir menú">
+      <button className="ios-interactive fixed left-4 top-4 z-30 rounded-md p-2 hover:bg-muted lg:hidden" onClick={() => setOpen(!open)} aria-label="Abrir menú">
         {open ? <X size={20} /> : <Menu size={20} />}
       </button>
       {open && <div className="fixed inset-0 z-10 bg-black/30 lg:hidden" onClick={() => setOpen(false)} />}
-      <aside className={cn("fixed inset-y-0 left-0 z-20 flex w-64 flex-col border-r bg-card px-4 py-6 transition-transform lg:translate-x-0", open ? "translate-x-0" : "-translate-x-full")}>
-        <Link href="/" className="mb-10 flex items-center gap-2 px-2 text-lg font-semibold" onClick={() => setOpen(false)}>
-          <span className="rounded-lg bg-primary p-2 text-primary-foreground"><Building2 size={20} /></span>
-          InmoLab <span className="text-primary">Kölbi</span>
+      <aside className={cn("fixed inset-y-0 left-0 z-20 flex w-64 flex-col border-r border-[#29483c] bg-[#123329] px-4 py-6 text-[#f5f2e8] shadow-xl transition-transform lg:translate-x-0", open ? "translate-x-0" : "-translate-x-full")}>
+        <Link href="/" className="mb-8 flex items-center gap-2 px-2 text-lg font-semibold" onClick={() => setOpen(false)}>
+          <span className="rounded-lg bg-[#eadcb8] p-2 text-[#123329]"><Building2 size={20} /></span>
+          <span>InmoLab <span className="text-[#eadcb8]">Kölbi</span></span>
         </Link>
         <nav className="space-y-1">
           {visibleNavigation.map(({ href, label, adminLabel, icon: Icon }) => (
-            <Link key={href} href={href} onClick={() => setOpen(false)} className={cn("flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground", pathname === href && "bg-primary/10 text-primary")}>
+            <Link key={href} href={href} onClick={() => setOpen(false)} className={cn("ios-interactive flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[#d5e0d9] hover:bg-white/10 hover:text-white", pathname === href && "bg-white/10 text-[#eadcb8] ring-1 ring-inset ring-[#eadcb8]/25")}>
               {href === "/perfil" && user ? (
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border bg-background">
-                  <MiiAvatar
-                    seed={Array.from(user.uid).reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) | 0, 0)}
-                    size={28}
-                    appearance={avatarAppearance ?? defaultMiiAppearance(1)}
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-[#eadcb8] bg-white/10">
+                  <AvatarImage
+                    avatarId={avatarId ?? DEFAULT_AVATAR_ID}
+                    size={40}
+                    alt={`Avatar de ${user.displayName || "usuario"}`}
+                    decorative
+                    className="rounded-full"
                   />
                 </span>
               ) : (
                 <Icon size={18} />
               )}
-              {role === "ADMIN" ? adminLabel ?? label : label}
+              {href === "/perfil" && user ? (
+                <span className="min-w-0 flex-1">
+                  <span className="block">{role === "ADMIN" ? adminLabel ?? label : label}</span>
+                  <span className="block truncate text-xs font-normal text-[#b9c9c0]">{user.displayName || user.email || "Mi cuenta"}</span>
+                </span>
+              ) : role === "ADMIN" ? adminLabel ?? label : label}
             </Link>
           ))}
         </nav>
-        <p className="mt-8 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <p className="mt-8 px-3 text-xs font-semibold uppercase tracking-wider text-[#c9d4cd]">
           Rol: {role}
         </p>
-        <button type="button" onClick={() => void handleSignOut()} className="mt-auto flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground">
+        <button type="button" onClick={() => void handleSignOut()} className="ios-interactive mt-auto flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[#d5e0d9] hover:bg-white/10 hover:text-white">
           <LogOut size={18} /> Cerrar sesión
         </button>
+        <p
+          className="mt-2 border-t border-white/10 px-2 pt-2 text-right text-[11px] tracking-wide text-[#eadcb8]"
+          style={{ fontFamily: '"Segoe Script", "Brush Script MT", cursive' }}
+        >
+          InmoLab <span className="text-[#b9c9c0]">powered by</span> Infinix Dev
+        </p>
       </aside>
     </>
   );

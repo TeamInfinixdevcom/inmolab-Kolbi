@@ -15,11 +15,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     "/": "dashboard",
     "/inmobiliarios": "inmobiliarios",
     "/propiedades": "propiedades",
-    "/clientes": "clientes",
+    "/agenda": "eventos",
     "/eventos": "eventos",
     "/actividad": "actividad",
     "/mapa": "mapa",
     "/reportes": "reportes",
+    "/graficas": "graficas",
     "/condominios": "condominios",
   };
   const currentModule = moduleByPath[pathname];
@@ -36,12 +37,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <Sidebar />
       <main className="min-h-screen lg:pl-64">
         <div className="mx-auto max-w-7xl p-6 pt-20 lg:p-10">
+          <div key={pathname} className="route-transition">
           {loading ? null : currentModule && !canAccessModule(role, currentModule) ? (
             <section className="rounded-xl border border-dashed p-12 text-center">
               <h1 className="text-2xl font-bold">Acceso restringido</h1>
               <p className="mt-2 text-muted-foreground">Tu rol ({role}) no tiene acceso a este módulo.</p>
             </section>
           ) : children}
+          </div>
         </div>
       </main>
     </div>

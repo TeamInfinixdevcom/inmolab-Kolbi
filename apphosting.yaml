@@ -51,3 +51,8 @@ env:
     availability:
       - RUNTIME
 
+  - variable: WEATHERAPI_KEY
+    secret: apiwheater
+    availability:
+      - RUNTIME
+

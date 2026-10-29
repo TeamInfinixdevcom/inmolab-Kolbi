@@ -1,52 +1,17 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase-admin";
 import { requireServerRole } from "@/lib/server-rbac";
-
-const APPEARANCE_LIMITS = {
-  skinTone: 4,
-  hairColor: 4,
-  shirtColor: 4,
-  hairStyle: 3,
-} as const;
-
-type AvatarAppearance = {
-  skinTone: number;
-  hairColor: number;
-  shirtColor: number;
-  hairStyle: number;
-  gender?: "male" | "female";
-};
-
-function isValidAppearance(value: unknown): value is AvatarAppearance {
-  if (!value || typeof value !== "object") return false;
-
-  const appearance = value as Record<string, unknown>;
-
-  const validIndexes = Object.entries(APPEARANCE_LIMITS).every(([key, limit]) => {
-    const index = appearance[key];
-    return typeof index === "number"
-      && Number.isInteger(index)
-      && index >= 0
-      && index < limit;
-  });
-
-  const validGender =
-    appearance.gender === undefined ||
-    appearance.gender === "male" ||
-    appearance.gender === "female";
-
-  return validIndexes && validGender;
-}
+import { DEFAULT_AVATAR_ID, isAvatarId } from "@/lib/avatar-catalog";
 
 export async function PUT(request: Request) {
   try {
     const { token } = await requireServerRole(request);
 
-    const body = await request.json() as { appearance?: unknown };
+    const body = await request.json() as { avatarId?: unknown };
 
-    if (!isValidAppearance(body.appearance)) {
+    if (!isAvatarId(body.avatarId)) {
       return NextResponse.json(
-        { error: "La configuración del avatar no es válida." },
+        { error: "El avatar seleccionado no es válido." },
         { status: 400 },
       );
     }
@@ -54,11 +19,11 @@ export async function PUT(request: Request) {
     await adminDb()
       .collection("inmobiliarios")
       .doc(token.uid)
-      .set({ avatarConfig: body.appearance }, { merge: true });
+      .set({ avatarId: body.avatarId }, { merge: true });
 
     return NextResponse.json({
       ok: true,
-      appearance: body.appearance,
+      avatarId: body.avatarId,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
@@ -94,13 +59,13 @@ export async function GET(request: Request) {
       .doc(token.uid)
       .get();
 
-    const storedAppearance = snapshot.data()?.avatarConfig;
-    const appearance = storedAppearance && typeof storedAppearance === "object"
-      ? { hairStyle: 0, ...(storedAppearance as Record<string, unknown>) }
-      : storedAppearance;
+    const storedAvatarId = snapshot.data()?.avatarId;
+    const avatarId = isAvatarId(storedAvatarId)
+      ? storedAvatarId
+      : DEFAULT_AVATAR_ID;
 
     return NextResponse.json({
-      appearance: isValidAppearance(appearance) ? appearance : null,
+      avatarId,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
@@ -114,7 +79,7 @@ export async function GET(request: Request) {
 
     if (message === "FORBIDDEN") {
       return NextResponse.json(
-        { error: "No tenés permiso para consultar el avatar." },
+        { error: "No tenés permiso para consultar tu avatar." },
         { status: 403 },
       );
     }

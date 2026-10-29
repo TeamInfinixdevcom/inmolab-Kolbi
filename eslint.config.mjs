@@ -1,8 +1,10 @@
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { FlatCompat } from "@eslint/eslintrc";
+import nextVitals from "eslint-config-next/core-web-vitals";
+import nextTs from "eslint-config-next/typescript";
 
-const directory = dirname(fileURLToPath(import.meta.url));
-const compat = new FlatCompat({ baseDirectory: directory });
+const config = [
+  { ignores: [".firebase/**", ".next/**", "out/**", "build/**"] },
+  ...nextVitals,
+  ...nextTs,
+];
 
-export default [...compat.extends("next/core-web-vitals", "next/typescript")];
+export default config;

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import { requireServerRole } from "@/lib/server-rbac";
 import { isRole, type Role } from "@/lib/rbac";
+import { DEFAULT_AVATAR_ID } from "@/lib/avatar-catalog";
 
 type UserPayload = {
   uid?: string;
@@ -18,19 +19,6 @@ function errorResponse(error: unknown) {
   if (message === "FORBIDDEN") return NextResponse.json({ error: "Solo ADMIN puede administrar usuarios." }, { status: 403 });
   console.error("No se pudo administrar el usuario:", error);
   return NextResponse.json({ error: "No se pudo completar la operación." }, { status: 400 });
-}
-
-function defaultAvatar(uid: string) {
-  let seed = 0;
-  for (let index = 0; index < uid.length; index += 1) {
-    seed = (seed * 31 + uid.charCodeAt(index)) | 0;
-  }
-  seed = Math.abs(seed);
-  return {
-    skinTone: seed % 4,
-    hairColor: (seed * 3) % 4,
-    shirtColor: (seed * 7) % 4,
-  };
 }
 
 function publicUser(user: { uid: string; email?: string; displayName?: string; disabled: boolean; customClaims?: Record<string, unknown> }) {
@@ -77,9 +65,9 @@ export async function POST(request: Request) {
       status: "Activo",
       role: body.role,
       authUid: authUser.uid,
-      avatarConfig: defaultAvatar(authUser.uid),
+      avatarId: DEFAULT_AVATAR_ID,
       createdAt: new Date().toISOString(),
-    });
+    }, { merge: true });
     return NextResponse.json({ user: publicUser({ ...authUser, customClaims: { role: body.role } }) }, { status: 201 });
   } catch (error) {
     return errorResponse(error);
