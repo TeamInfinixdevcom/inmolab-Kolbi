@@ -40,6 +40,7 @@ const RealMap = dynamic(
 );
 
 type PropertyStatus = "Activa" | "Inactiva";
+type AcquisitionMethod = "" | "Pago" | "Invitación (costo ₡0)";
 
 type HistoryEntry = {
   id: string;
@@ -65,11 +66,17 @@ type Property = {
   district: string;
   inmobiliarioCondition: string;
   activeOperators: number;
+  activeOperatorNames: string[];
+  acquisitionMethod: AcquisitionMethod;
+  condominiumId: string;
   administrator: string;
   administratorEmail: string;
   activeServices: number;
   builtHouses: number;
   nap: string;
+  totalNaps: number;
+  occupiedNaps: number;
+  occupancyPercentage: number | null;
   removedServices: number;
   registrationNote: string;
   observations: string;
@@ -102,6 +109,8 @@ type PropertyForm = Omit<
   | "updatedByName"
   | "history"
   | "inmobiliarioName"
+  | "activeOperators"
+  | "occupancyPercentage"
 >;
 
 type Inmobiliario = { id: string; name: string; email: string };
@@ -117,12 +126,16 @@ const emptyForm: PropertyForm = {
   canton: "",
   district: "",
   inmobiliarioCondition: "",
-  activeOperators: 0,
+  activeOperatorNames: ["Kolbi"],
+  acquisitionMethod: "",
+  condominiumId: "",
   administrator: "",
   administratorEmail: "",
   activeServices: 0,
   builtHouses: 0,
   nap: "",
+  totalNaps: 0,
+  occupiedNaps: 0,
   removedServices: 0,
   registrationNote: "",
   observations: "",
@@ -144,12 +157,16 @@ const fieldLabels: Record<keyof PropertyForm, string> = {
   canton: "Cantón",
   district: "Distrito",
   inmobiliarioCondition: "Estado/Condición Inmobiliario",
-  activeOperators: "Operadores activos",
+  activeOperatorNames: "Operadores activos",
+  acquisitionMethod: "Método de adquisición",
+  condominiumId: "ID del condominio",
   administrator: "Administrador",
   administratorEmail: "Correo del administrador",
   activeServices: "Servicios activos",
   builtHouses: "Casas construidas",
   nap: "NAP",
+  totalNaps: "NAP totales",
+  occupiedNaps: "NAP ocupados",
   removedServices: "Servicios retirados",
   registrationNote: "Nota/actividad del registro",
   observations: "Observaciones",
@@ -168,6 +185,28 @@ function number(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function nonNegativeNumber(value: unknown): number {
+  return Math.max(0, number(value));
+}
+
+function operatorNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const names = value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return [...new Map(names.map((name) => [name.toLocaleLowerCase("es-CR"), name])).values()];
+}
+
+function getOccupancyPercentage(totalNaps: number, occupiedNaps: number): number | null {
+  if (totalNaps <= 0) return null;
+  return (occupiedNaps / totalNaps) * 100;
+}
+
+function formatOccupancy(percentage: number | null): string {
+  return percentage === null ? "No aplica" : `${percentage.toLocaleString("es-CR", { maximumFractionDigits: 1 })} %`;
+}
+
 function readHistory(value: unknown): HistoryEntry[] {
   if (!Array.isArray(value)) return [];
   return value.filter((entry): entry is HistoryEntry => Boolean(entry && typeof entry === "object" && "date" in entry));
@@ -183,6 +222,11 @@ function mapProperty(id: string, data: Record<string, unknown>, agents: Inmobili
   };
   const createdBy = text(data.createdById ?? data.createdBy);
   const updatedBy = text(data.updatedById ?? data.updatedBy);
+  const activeOperatorNames = operatorNames(
+    data.activeOperatorNames ?? (Array.isArray(data.activeOperators) ? data.activeOperators : []),
+  );
+  const totalNaps = nonNegativeNumber(data.totalNaps);
+  const occupiedNaps = nonNegativeNumber(data.occupiedNaps);
   return {
     id,
     condominiumName: text(data.condominiumName ?? data.title),
@@ -195,12 +239,20 @@ function mapProperty(id: string, data: Record<string, unknown>, agents: Inmobili
     canton: text(data.canton),
     district: text(data.district),
     inmobiliarioCondition: text(data.inmobiliarioCondition),
-    activeOperators: number(data.activeOperators),
+    activeOperators: Math.max(nonNegativeNumber(data.activeOperators), activeOperatorNames.length),
+    activeOperatorNames,
+    acquisitionMethod: data.acquisitionMethod === "Pago" || data.acquisitionMethod === "Invitación (costo ₡0)"
+      ? data.acquisitionMethod
+      : "",
+    condominiumId: text(data.condominiumId),
     administrator: text(data.administrator),
     administratorEmail: text(data.administratorEmail),
     activeServices: number(data.activeServices),
     builtHouses: number(data.builtHouses),
     nap: text(data.nap),
+    totalNaps,
+    occupiedNaps,
+    occupancyPercentage: getOccupancyPercentage(totalNaps, occupiedNaps),
     removedServices: number(data.removedServices),
     registrationNote: text(data.registrationNote),
     observations: text(data.observations ?? data.description),
@@ -223,7 +275,9 @@ function mapProperty(id: string, data: Record<string, unknown>, agents: Inmobili
 
 function changedFields(previous: Property, next: PropertyForm): string[] {
   return (Object.keys(fieldLabels) as Array<keyof PropertyForm>)
-    .filter((field) => previous[field] !== next[field])
+    .filter((field) => Array.isArray(previous[field]) && Array.isArray(next[field])
+      ? previous[field].join("\u0000") !== next[field].join("\u0000")
+      : previous[field] !== next[field])
     .map((field) => fieldLabels[field]);
 }
 
@@ -247,6 +301,7 @@ export default function PropiedadesPage() {
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [coordinateInput, setCoordinateInput] = useState("");
   const [coordinateError, setCoordinateError] = useState("");
+  const [operatorInput, setOperatorInput] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -326,6 +381,8 @@ export default function PropiedadesPage() {
       property.administrator,
       property.administratorEmail,
       property.nap,
+      property.condominiumId,
+      property.activeOperatorNames.join(" "),
       property.inmobiliarioName,
     ].join(" ").toLowerCase();
     return haystack.includes(query.toLowerCase())
@@ -355,6 +412,23 @@ export default function PropiedadesPage() {
 
   function updateField<K extends keyof PropertyForm>(field: K, value: PropertyForm[K]) {
     setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function addOperator() {
+    const name = operatorInput.trim();
+    if (!name) return;
+    setForm((current) => ({
+      ...current,
+      activeOperatorNames: operatorNames([...current.activeOperatorNames, name]),
+    }));
+    setOperatorInput("");
+  }
+
+  function removeOperator(name: string) {
+    setForm((current) => ({
+      ...current,
+      activeOperatorNames: current.activeOperatorNames.filter((operator) => operator !== name),
+    }));
   }
 
   function updateCoordinates(value: string) {
@@ -393,6 +467,7 @@ export default function PropiedadesPage() {
     setForm({ ...emptyForm, inmobiliarioId: user?.uid ?? "" });
     setCoordinateInput("");
     setCoordinateError("");
+    setOperatorInput("");
     setShowLocationPicker(false);
     setSelected(null);
     setError("");
@@ -419,12 +494,16 @@ export default function PropiedadesPage() {
       canton: property.canton,
       district: property.district,
       inmobiliarioCondition: property.inmobiliarioCondition,
-      activeOperators: property.activeOperators,
+      activeOperatorNames: property.activeOperatorNames,
+      acquisitionMethod: property.acquisitionMethod,
+      condominiumId: property.condominiumId,
       administrator: property.administrator,
       administratorEmail: property.administratorEmail,
       activeServices: property.activeServices,
       builtHouses: property.builtHouses,
       nap: property.nap,
+      totalNaps: property.totalNaps,
+      occupiedNaps: property.occupiedNaps,
       removedServices: property.removedServices,
       registrationNote: property.registrationNote,
       observations: property.observations,
@@ -434,6 +513,7 @@ export default function PropiedadesPage() {
       inmobiliarioId: property.inmobiliarioId || property.createdById || property.createdBy || user?.uid || "",
     });
     setShowLocationPicker(false);
+    setOperatorInput("");
     setSelected(null);
     setError("");
     setShowForm(true);
@@ -456,6 +536,10 @@ export default function PropiedadesPage() {
     }
     if (!form.condominiumName.trim() || !form.administrator.trim() || !form.administratorEmail.trim()) {
       setError("Completa el nombre del condominio, el administrador y su correo.");
+      return;
+    }
+    if (form.occupiedNaps > form.totalNaps) {
+      setError("Los NAP ocupados no pueden ser mayores que los NAP totales.");
       return;
     }
 
@@ -483,8 +567,15 @@ export default function PropiedadesPage() {
         ? previous?.inmobiliarioId || form.inmobiliarioId
         : currentActor.userId;
     const responsibleProfile = inmobiliarios.find((item) => item.id === responsibleId);
+    const normalizedOperators = operatorNames(form.activeOperatorNames);
     const payload = {
       ...form,
+      activeOperatorNames: normalizedOperators,
+      activeOperators: normalizedOperators.length,
+      acquisitionMethod: form.acquisitionMethod,
+      condominiumId: form.condominiumId.trim(),
+      totalNaps: nonNegativeNumber(form.totalNaps),
+      occupiedNaps: nonNegativeNumber(form.occupiedNaps),
       latitude: latitude ?? null,
       longitude: longitude ?? null,
       title: form.condominiumName.trim(),
@@ -538,6 +629,7 @@ export default function PropiedadesPage() {
       setForm(emptyForm);
       setCoordinateInput("");
       setCoordinateError("");
+      setOperatorInput("");
     } catch (saveError) {
       console.error("No se pudo guardar el condominio.", saveError);
       setError("No se pudo guardar el condominio. Verifica los permisos de Firestore.");
@@ -597,6 +689,8 @@ export default function PropiedadesPage() {
             <form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <label className="text-sm font-medium lg:col-span-2">Nombre del condominio<input required value={form.condominiumName} onChange={(event) => updateField("condominiumName", event.target.value)} placeholder="Condominio Las Flores" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium">Región<input value={form.region} onChange={(event) => updateField("region", event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <label className="text-sm font-medium">ID del condominio<input value={form.condominiumId} onChange={(event) => updateField("condominiumId", event.target.value)} placeholder="Ej. CON-001" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <label className="text-sm font-medium">Método de adquisición<select value={form.acquisitionMethod} onChange={(event) => updateField("acquisitionMethod", event.target.value as AcquisitionMethod)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary"><option value="">Sin registrar</option><option value="Pago">Pago</option><option value="Invitación (costo ₡0)">Invitación (costo ₡0)</option></select></label>
               <label className="text-sm font-medium">Fecha de operación<input type="date" value={form.operationDate} onChange={(event) => updateField("operationDate", event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium">Central<input value={form.central} onChange={(event) => updateField("central", event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium">ADO_Distrito<input value={form.adoDistrict} onChange={(event) => updateField("adoDistrict", event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
@@ -605,12 +699,25 @@ export default function PropiedadesPage() {
               <label className="text-sm font-medium">Cantón<input value={form.canton} onChange={(event) => updateField("canton", event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium">Distrito<input value={form.district} onChange={(event) => updateField("district", event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium">Estado/Condición Inmobiliario<input value={form.inmobiliarioCondition} onChange={(event) => updateField("inmobiliarioCondition", event.target.value)} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
-              <label className="text-sm font-medium">Operadores activos<input min="0" type="number" value={form.activeOperators} onChange={(event) => updateField("activeOperators", Number(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <fieldset className="rounded-lg border p-4 sm:col-span-2 lg:col-span-3">
+                <legend className="px-1 text-sm font-medium">Operadores activos</legend>
+                <p className="mb-3 text-xs text-muted-foreground">Registrá a Kolbi y a los competidores activos en este condominio.</p>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input value={operatorInput} onChange={(event) => setOperatorInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addOperator(); } }} placeholder="Ej. Liberty" className="h-10 flex-1 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary" />
+                  <Button type="button" variant="outline" onClick={addOperator} disabled={!operatorInput.trim()}><Plus size={16} className="mr-1" /> Agregar operador</Button>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {form.activeOperatorNames.length === 0 ? <p className="text-sm text-muted-foreground">No hay operadores registrados.</p> : form.activeOperatorNames.map((operator) => <span key={operator} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-3 py-1 text-sm text-primary">{operator}<button type="button" onClick={() => removeOperator(operator)} aria-label={`Eliminar ${operator}`} className="ml-1 rounded-full text-primary/80 hover:text-primary focus:outline-none focus:ring-2 focus:ring-primary">×</button></span>)}
+                </div>
+              </fieldset>
               <label className="text-sm font-medium">Administrador<input required value={form.administrator} onChange={(event) => updateField("administrator", event.target.value)} placeholder="Nombre completo" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium">Correo del administrador<input required type="email" value={form.administratorEmail} onChange={(event) => updateField("administratorEmail", event.target.value)} placeholder="admin@condominio.com" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium">Servicios activos<input min="0" type="number" value={form.activeServices} onChange={(event) => updateField("activeServices", Number(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium">Casas construidas<input min="0" type="number" value={form.builtHouses} onChange={(event) => updateField("builtHouses", Number(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium">NAP<input value={form.nap} onChange={(event) => updateField("nap", event.target.value)} placeholder="Código o referencia NAP" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <label className="text-sm font-medium">NAP totales<input min="0" type="number" value={form.totalNaps} onChange={(event) => updateField("totalNaps", nonNegativeNumber(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <label className="text-sm font-medium">NAP ocupados<input min="0" max={form.totalNaps || undefined} type="number" value={form.occupiedNaps} onChange={(event) => updateField("occupiedNaps", nonNegativeNumber(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <div className="rounded-md border bg-primary/5 px-3 py-2 text-sm"><p className="text-muted-foreground">Porcentaje de ocupación</p><p className="mt-1 text-lg font-bold text-primary">{formatOccupancy(getOccupancyPercentage(form.totalNaps, form.occupiedNaps))}</p><p className="text-xs text-muted-foreground">NAP ocupados ÷ NAP totales</p></div>
               <label className="text-sm font-medium">Servicios retirados<input min="0" type="number" value={form.removedServices} onChange={(event) => updateField("removedServices", Number(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium">
                 Responsable
@@ -668,8 +775,10 @@ export default function PropiedadesPage() {
         <CardContent>
           {loading ? <p className="py-10 text-center text-sm text-muted-foreground">Cargando condominios...</p> : !db ? <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">Firebase aún no está conectado.</p> : filteredProperties.length === 0 ? <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No hay condominios que coincidan con los filtros.</p> : <><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{paginatedProperties.map((property) => (
             <article key={property.id} className="rounded-xl border p-4 transition-shadow hover:shadow-md">
-              <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-2"><span className="rounded-lg bg-primary/10 p-2 text-primary"><Building2 size={18} /></span><div><h2 className="font-semibold">{property.condominiumName || "Sin nombre"}</h2><p className="text-xs text-muted-foreground">Administrador: {property.administrator || "Sin asignar"}</p></div></div><span className={`rounded-full px-2 py-1 text-xs font-medium ${statusBadgeClass(property.status)}`}>{property.status}</span></div>
-              <div className="mt-4 grid grid-cols-2 gap-2 text-sm"><div><p className="text-muted-foreground">Servicios activos</p><p className="font-semibold">{property.activeServices}</p></div><div><p className="text-muted-foreground">Casas construidas</p><p className="font-semibold">{property.builtHouses}</p></div><div><p className="text-muted-foreground">NAP</p><p className="font-semibold">{property.nap || "—"}</p></div><div><p className="text-muted-foreground">Retirados</p><p className="font-semibold">{property.removedServices}</p></div></div>
+              <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-2"><span className="rounded-lg bg-primary/10 p-2 text-primary"><Building2 size={18} /></span><div><h2 className="font-semibold">{property.condominiumName || "Sin nombre"}</h2><p className="text-xs text-muted-foreground">{property.condominiumId ? `ID: ${property.condominiumId} · ` : ""}Administrador: {property.administrator || "Sin asignar"}</p></div></div><span className={`rounded-full px-2 py-1 text-xs font-medium ${statusBadgeClass(property.status)}`}>{property.status}</span></div>
+              <div className="mt-4 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2"><p className="text-xs font-medium uppercase tracking-wide text-primary">Ocupación</p><p className="mt-1 text-2xl font-bold text-primary">{formatOccupancy(property.occupancyPercentage)}</p><p className="text-xs text-muted-foreground">{property.occupiedNaps} de {property.totalNaps} NAP ocupados</p></div>
+              <div className="mt-4 grid grid-cols-2 gap-2 text-sm"><div><p className="text-muted-foreground">Servicios activos</p><p className="font-semibold">{property.activeServices}</p></div><div><p className="text-muted-foreground">Casas construidas</p><p className="font-semibold">{property.builtHouses}</p></div><div><p className="text-muted-foreground">NAP</p><p className="font-semibold">{property.nap || "—"}</p></div><div><p className="text-muted-foreground">Operadores</p><p className="font-semibold">{property.activeOperators}</p></div></div>
+              {property.activeOperatorNames.length > 0 && <p className="mt-3 text-xs text-muted-foreground">Operadores activos: {property.activeOperatorNames.join(", ")}</p>}
               <p className="mt-4 border-t pt-3 text-xs text-muted-foreground">Última actualización: {property.updatedByName || property.createdByName || "Usuario sin nombre disponible"}</p>
               <div className="mt-4 flex justify-between gap-2"><Button variant="outline" size="sm" onClick={() => setSelected(property)}><Eye size={15} className="mr-1" /> Bitácora</Button>{canUpdate && (role !== "AGENTE" || property.createdBy === user?.uid) && <><Button variant="ghost" size="icon" onClick={() => openEdit(property)} aria-label={`Editar ${property.condominiumName}`}><Edit3 size={16} /></Button><Button variant="ghost" size="icon" onClick={() => void toggleStatus(property)} aria-label="Cambiar estado">{property.status === "Activa" ? <ToggleRight size={20} className="text-[#4e8e5b]" /> : <ToggleLeft size={20} className="text-[#858c86]" />}</Button></>}</div>
             </article>
