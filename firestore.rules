@@ -134,7 +134,10 @@ service cloud.firestore {
       allow read: if hasRole();
       allow create: if (isStaff() || isAgent()) && createsAsSelf();
       allow update: if isStaff() && updatesAsSelf() || agentUpdate();
-      allow delete: if isAdmin();
+      allow delete: if isAdmin()
+        || (hasRole()
+          && (resource.data.get('createdBy', '') == request.auth.uid
+            || resource.data.get('createdById', '') == request.auth.uid));
     }
 
     match /clientes/{id} {

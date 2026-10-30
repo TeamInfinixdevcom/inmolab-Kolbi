@@ -101,6 +101,31 @@ test("los demás usuarios autorizados pueden ver una propiedad guardada y el ava
   }
 });
 
+test("el creador puede eliminar su propiedad, otros agentes no y ADMIN puede eliminar cualquiera", async () => {
+  const ownerDatabase = testEnvironment.authenticatedContext("agent-a", { role: "AGENTE" }).firestore();
+  const otherDatabase = testEnvironment.authenticatedContext("agent-b", { role: "AGENTE" }).firestore();
+  const adminDatabase = testEnvironment.authenticatedContext("admin", { role: "ADMIN" }).firestore();
+  const ownerProperty = ownerDatabase.doc("propiedades/owner-can-delete");
+
+  await assertSucceeds(ownerProperty.set({
+    condominiumName: "Propiedad del agente A",
+    createdBy: "agent-a",
+    createdById: "agent-a",
+    updatedBy: "agent-a",
+  }));
+  await assertFails(otherDatabase.doc("propiedades/owner-can-delete").delete());
+  await assertSucceeds(ownerProperty.delete());
+
+  const adminDeleteProperty = ownerDatabase.doc("propiedades/admin-can-delete");
+  await assertSucceeds(adminDeleteProperty.set({
+    condominiumName: "Propiedad para ADMIN",
+    createdBy: "agent-a",
+    createdById: "agent-a",
+    updatedBy: "agent-a",
+  }));
+  await assertSucceeds(adminDatabase.doc("propiedades/admin-can-delete").delete());
+});
+
 test("AGENTE puede crear, leer, editar y eliminar su propio condominio", async () => {
   const database = testEnvironment.authenticatedContext("agent-a", { role: "AGENTE" }).firestore();
   const reference = database.doc("condominios/agent-owned");

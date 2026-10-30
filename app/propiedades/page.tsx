@@ -10,6 +10,7 @@ import {
   MapPin,
   Plus,
   Search,
+  Trash2,
   ToggleLeft,
   ToggleRight,
   X,
@@ -20,6 +21,7 @@ import {
   addDoc,
   arrayUnion,
   collection,
+  deleteDoc,
   doc,
   getDocs,
   onSnapshot,
@@ -335,6 +337,7 @@ export default function PropiedadesPage() {
   const [coordinateError, setCoordinateError] = useState("");
   const [operatorInput, setOperatorInput] = useState("");
   const [copiedPropertyId, setCopiedPropertyId] = useState<string | null>(null);
+  const [deletingPropertyId, setDeletingPropertyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState("");
 
@@ -485,6 +488,27 @@ export default function PropiedadesPage() {
     } catch (copyError) {
       console.error("No se pudo copiar el ID del condominio.", copyError);
       setError("No se pudo copiar el ID del condominio.");
+    }
+  }
+
+  async function deleteProperty(property: Property) {
+    const canDelete = role === "ADMIN"
+      || property.createdBy === user?.uid
+      || property.createdById === user?.uid;
+    if (!db || !user || !canDelete) return;
+    if (!window.confirm(`¿Deseás eliminar la propiedad "${property.condominiumName || "Sin nombre"}"? Esta acción no se puede deshacer.`)) return;
+
+    setDeletingPropertyId(property.id);
+    setError("");
+    try {
+      await deleteDoc(doc(db, propertyCollection, property.id));
+      if (selected?.id === property.id) setSelected(null);
+      showNotice("Propiedad eliminada correctamente.");
+    } catch (deleteError) {
+      console.error("No se pudo eliminar la propiedad.", deleteError);
+      setError("No se pudo eliminar la propiedad. Verifica los permisos de Firestore.");
+    } finally {
+      setDeletingPropertyId(null);
     }
   }
 
@@ -848,7 +872,7 @@ export default function PropiedadesPage() {
               {property.activeOperatorNames.length > 0 && <p className="mt-3 text-xs text-muted-foreground">Operadores activos: {property.activeOperatorNames.join(", ")}</p>}
               {pendingPropertyDetails(property).length > 0 && <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">Pendiente: {pendingPropertyDetails(property).join(", ")}.</p>}
               <p className="mt-4 border-t pt-3 text-xs text-muted-foreground">Última actualización: {property.updatedByName || property.createdByName || "Usuario sin nombre disponible"}</p>
-              <div className="mt-4 flex justify-between gap-2"><Button variant="outline" size="sm" onClick={() => setSelected(property)}><Eye size={15} className="mr-1" /> Bitácora</Button>{canUpdate && (role !== "AGENTE" || property.createdBy === user?.uid) && <><Button variant="ghost" size="icon" onClick={() => openEdit(property)} aria-label={`Editar ${property.condominiumName}`}><Edit3 size={16} /></Button><Button variant="ghost" size="icon" onClick={() => void toggleStatus(property)} aria-label="Cambiar estado">{property.status === "Activa" ? <ToggleRight size={20} className="text-[#4e8e5b]" /> : <ToggleLeft size={20} className="text-[#858c86]" />}</Button></>}</div>
+              <div className="mt-4 flex justify-between gap-2"><Button variant="outline" size="sm" onClick={() => setSelected(property)}><Eye size={15} className="mr-1" /> Bitácora</Button><div className="flex gap-1">{canUpdate && (role !== "AGENTE" || property.createdBy === user?.uid) && <><Button variant="ghost" size="icon" onClick={() => openEdit(property)} aria-label={`Editar ${property.condominiumName}`}><Edit3 size={16} /></Button><Button variant="ghost" size="icon" onClick={() => void toggleStatus(property)} aria-label="Cambiar estado">{property.status === "Activa" ? <ToggleRight size={20} className="text-[#4e8e5b]" /> : <ToggleLeft size={20} className="text-[#858c86]" />}</Button></>}{(role === "ADMIN" || property.createdBy === user?.uid || property.createdById === user?.uid) && <Button variant="ghost" size="icon" onClick={() => void deleteProperty(property)} disabled={deletingPropertyId === property.id} aria-label={`Eliminar ${property.condominiumName}`} title="Eliminar propiedad"><Trash2 size={16} className="text-destructive" /></Button>}</div></div>
             </article>
           ))}</div><PaginationControls page={safeCurrentPage} pageCount={pageCount} pageSize={pageSize} itemCount={filteredProperties.length} onPageChange={setCurrentPage} /></>}
         </CardContent>
