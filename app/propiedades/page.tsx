@@ -3,8 +3,10 @@
 import {
   Building2,
   Check,
+  Copy,
   Edit3,
   Eye,
+  Mail,
   MapPin,
   Plus,
   Search,
@@ -41,6 +43,7 @@ const RealMap = dynamic(
 
 type PropertyStatus = "Activa" | "Inactiva";
 type AcquisitionMethod = "" | "Pago" | "Invitación (costo ₡0)";
+type OccupancyFilter = "Todas" | "Sin datos" | "Baja" | "Media" | "Alta";
 
 type HistoryEntry = {
   id: string;
@@ -71,6 +74,7 @@ type Property = {
   condominiumId: string;
   administrator: string;
   administratorEmail: string;
+  administratorPhone: string;
   activeServices: number;
   builtHouses: number;
   nap: string;
@@ -131,6 +135,7 @@ const emptyForm: PropertyForm = {
   condominiumId: "",
   administrator: "",
   administratorEmail: "",
+  administratorPhone: "",
   activeServices: 0,
   builtHouses: 0,
   nap: "",
@@ -162,6 +167,7 @@ const fieldLabels: Record<keyof PropertyForm, string> = {
   condominiumId: "ID del condominio",
   administrator: "Administrador",
   administratorEmail: "Correo del administrador",
+  administratorPhone: "Teléfono del administrador",
   activeServices: "Servicios activos",
   builtHouses: "Casas construidas",
   nap: "NAP",
@@ -207,6 +213,28 @@ function formatOccupancy(percentage: number | null): string {
   return percentage === null ? "No aplica" : `${percentage.toLocaleString("es-CR", { maximumFractionDigits: 1 })} %`;
 }
 
+function occupancyBand(percentage: number | null): Exclude<OccupancyFilter, "Todas"> {
+  if (percentage === null) return "Sin datos";
+  if (percentage < 50) return "Baja";
+  if (percentage < 80) return "Media";
+  return "Alta";
+}
+
+function occupancyBarClass(percentage: number | null): string {
+  if (percentage === null) return "bg-slate-300";
+  if (percentage < 50) return "bg-red-500";
+  if (percentage < 80) return "bg-amber-500";
+  return "bg-emerald-500";
+}
+
+function pendingPropertyDetails(property: Property): string[] {
+  return [
+    !property.condominiumId && "ID",
+    !property.administratorPhone && "teléfono",
+    property.totalNaps <= 0 && "NAP totales",
+  ].filter((detail): detail is string => Boolean(detail));
+}
+
 function readHistory(value: unknown): HistoryEntry[] {
   if (!Array.isArray(value)) return [];
   return value.filter((entry): entry is HistoryEntry => Boolean(entry && typeof entry === "object" && "date" in entry));
@@ -247,6 +275,7 @@ function mapProperty(id: string, data: Record<string, unknown>, agents: Inmobili
     condominiumId: text(data.condominiumId),
     administrator: text(data.administrator),
     administratorEmail: text(data.administratorEmail),
+    administratorPhone: text(data.administratorPhone),
     activeServices: number(data.activeServices),
     builtHouses: number(data.builtHouses),
     nap: text(data.nap),
@@ -293,6 +322,9 @@ export default function PropiedadesPage() {
   const [selected, setSelected] = useState<Property | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"Todas" | PropertyStatus>("Todas");
+  const [regionFilter, setRegionFilter] = useState("Todas");
+  const [operatorFilter, setOperatorFilter] = useState("Todas");
+  const [occupancyFilter, setOccupancyFilter] = useState<OccupancyFilter>("Todas");
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 12;
   const [loading, setLoading] = useState(true);
@@ -302,6 +334,8 @@ export default function PropiedadesPage() {
   const [coordinateInput, setCoordinateInput] = useState("");
   const [coordinateError, setCoordinateError] = useState("");
   const [operatorInput, setOperatorInput] = useState("");
+  const [copiedPropertyId, setCopiedPropertyId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -369,6 +403,11 @@ export default function PropiedadesPage() {
     };
   }, [role, user]);
 
+  const regions = useMemo(() => [...new Set(properties.map((property) => property.region.trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "es-CR")), [properties]);
+  const operators = useMemo(() => [...new Set(properties.flatMap((property) => property.activeOperatorNames))]
+    .sort((a, b) => a.localeCompare(b, "es-CR")), [properties]);
+
   const filteredProperties = useMemo(() => properties.filter((property) => {
     const haystack = [
       property.condominiumName,
@@ -380,24 +419,24 @@ export default function PropiedadesPage() {
       property.district,
       property.administrator,
       property.administratorEmail,
+      property.administratorPhone,
       property.nap,
       property.condominiumId,
       property.activeOperatorNames.join(" "),
       property.inmobiliarioName,
     ].join(" ").toLowerCase();
     return haystack.includes(query.toLowerCase())
-      && (statusFilter === "Todas" || property.status === statusFilter);
-  }), [properties, query, statusFilter]);
+      && (statusFilter === "Todas" || property.status === statusFilter)
+      && (regionFilter === "Todas" || property.region === regionFilter)
+      && (operatorFilter === "Todas" || property.activeOperatorNames.includes(operatorFilter))
+      && (occupancyFilter === "Todas" || occupancyBand(property.occupancyPercentage) === occupancyFilter);
+  }), [occupancyFilter, operatorFilter, properties, query, regionFilter, statusFilter]);
   const pageCount = Math.max(1, Math.ceil(filteredProperties.length / pageSize));
   const safeCurrentPage = Math.min(currentPage, pageCount);
   const paginatedProperties = filteredProperties.slice(
     (safeCurrentPage - 1) * pageSize,
     safeCurrentPage * pageSize,
   );
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [query, statusFilter]);
 
   const selectedMapPosition = useMemo<MapPosition | null>(() => {
     if (!form.latitude.trim() || !form.longitude.trim()) return null;
@@ -429,6 +468,24 @@ export default function PropiedadesPage() {
       ...current,
       activeOperatorNames: current.activeOperatorNames.filter((operator) => operator !== name),
     }));
+  }
+
+  function showNotice(message: string) {
+    setNotice(message);
+    window.setTimeout(() => setNotice((current) => current === message ? null : current), 2800);
+  }
+
+  async function copyCondominiumId(property: Property) {
+    if (!property.condominiumId) return;
+    try {
+      await navigator.clipboard.writeText(property.condominiumId);
+      setCopiedPropertyId(property.id);
+      showNotice("ID del condominio copiado.");
+      window.setTimeout(() => setCopiedPropertyId((current) => current === property.id ? null : current), 2000);
+    } catch (copyError) {
+      console.error("No se pudo copiar el ID del condominio.", copyError);
+      setError("No se pudo copiar el ID del condominio.");
+    }
   }
 
   function updateCoordinates(value: string) {
@@ -499,6 +556,7 @@ export default function PropiedadesPage() {
       condominiumId: property.condominiumId,
       administrator: property.administrator,
       administratorEmail: property.administratorEmail,
+      administratorPhone: property.administratorPhone,
       activeServices: property.activeServices,
       builtHouses: property.builtHouses,
       nap: property.nap,
@@ -582,6 +640,7 @@ export default function PropiedadesPage() {
       condominiumName: form.condominiumName.trim(),
       administrator: form.administrator.trim(),
       administratorEmail: form.administratorEmail.trim(),
+      administratorPhone: form.administratorPhone.trim(),
       registrationNote: form.registrationNote.trim(),
       observations: form.observations.trim(),
       inmobiliarioId: responsibleId,
@@ -625,6 +684,7 @@ export default function PropiedadesPage() {
         });
       }
       setShowForm(false);
+      showNotice(editingId ? "Cambios guardados correctamente." : "Condominio guardado correctamente.");
       setEditingId(null);
       setForm(emptyForm);
       setCoordinateInput("");
@@ -660,6 +720,7 @@ export default function PropiedadesPage() {
         updatedByName: currentActor.user,
         history: arrayUnion(entry),
       });
+      showNotice(`Condominio ${nextStatus.toLowerCase()}.`);
     } catch (statusError) {
       console.error("No se pudo cambiar el estado del condominio.", statusError);
       setError("No se pudo cambiar el estado. Verifica los permisos de Firestore.");
@@ -678,9 +739,10 @@ export default function PropiedadesPage() {
       </header>
 
       {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      {notice && <div role="status" aria-live="polite" className="apple-toast fixed bottom-5 right-5 z-50 flex max-w-sm items-center gap-2 rounded-2xl border border-primary/15 bg-card px-4 py-3 text-sm font-medium text-foreground"><span className="rounded-full bg-primary/10 p-1 text-primary"><Check size={15} /></span>{notice}</div>}
 
       {showForm && (
-        <Card>
+        <Card className="apple-surface">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>{editingId ? "Editar condominio" : "Nuevo condominio"}</CardTitle>
             <Button variant="ghost" size="icon" onClick={() => setShowForm(false)} aria-label="Cerrar formulario"><X size={18} /></Button>
@@ -712,6 +774,7 @@ export default function PropiedadesPage() {
               </fieldset>
               <label className="text-sm font-medium">Administrador<input required value={form.administrator} onChange={(event) => updateField("administrator", event.target.value)} placeholder="Nombre completo" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium">Correo del administrador<input required type="email" value={form.administratorEmail} onChange={(event) => updateField("administratorEmail", event.target.value)} placeholder="admin@condominio.com" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
+              <label className="text-sm font-medium">Teléfono de contacto<input type="tel" inputMode="tel" autoComplete="tel" value={form.administratorPhone} onChange={(event) => updateField("administratorPhone", event.target.value)} placeholder="Ej. 8888-8888" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium">Servicios activos<input min="0" type="number" value={form.activeServices} onChange={(event) => updateField("activeServices", Number(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium">Casas construidas<input min="0" type="number" value={form.builtHouses} onChange={(event) => updateField("builtHouses", Number(event.target.value))} className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
               <label className="text-sm font-medium">NAP<input value={form.nap} onChange={(event) => updateField("nap", event.target.value)} placeholder="Código o referencia NAP" className="mt-2 h-10 w-full rounded-md border bg-background px-3 font-normal outline-none focus:ring-2 focus:ring-primary" /></label>
@@ -764,21 +827,26 @@ export default function PropiedadesPage() {
         </Card>
       )}
 
-      <Card>
+      <Card className="apple-surface">
         <CardHeader className="flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div><CardTitle>Condominios registrados</CardTitle><p className="mt-1 text-sm text-muted-foreground">{properties.length} registros</p></div>
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-            <div className="relative"><Search size={16} className="absolute left-3 top-2.5 text-muted-foreground" /><input aria-label="Buscar condominios" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar condominio..." className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-primary sm:w-56" /></div>
-            <select aria-label="Filtrar por estado" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"><option>Todas</option><option>Activa</option><option>Inactiva</option></select>
+          <div className="grid w-full gap-2 sm:grid-cols-2 xl:w-auto xl:grid-cols-6">
+            <div className="relative xl:col-span-2"><Search size={16} className="absolute left-3 top-2.5 text-muted-foreground" /><input aria-label="Buscar condominios" value={query} onChange={(event) => { setQuery(event.target.value); setCurrentPage(1); }} placeholder="Buscar condominio..." className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-primary xl:w-56" /></div>
+            <select aria-label="Filtrar por estado" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value as typeof statusFilter); setCurrentPage(1); }} className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"><option>Todas</option><option>Activa</option><option>Inactiva</option></select>
+            <select aria-label="Filtrar por región" value={regionFilter} onChange={(event) => { setRegionFilter(event.target.value); setCurrentPage(1); }} className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"><option value="Todas">Todas las regiones</option>{regions.map((region) => <option key={region} value={region}>{region}</option>)}</select>
+            <select aria-label="Filtrar por operador" value={operatorFilter} onChange={(event) => { setOperatorFilter(event.target.value); setCurrentPage(1); }} className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"><option value="Todas">Todos los operadores</option>{operators.map((operator) => <option key={operator} value={operator}>{operator}</option>)}</select>
+            <select aria-label="Filtrar por ocupación" value={occupancyFilter} onChange={(event) => { setOccupancyFilter(event.target.value as OccupancyFilter); setCurrentPage(1); }} className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-primary"><option value="Todas">Toda ocupación</option><option value="Sin datos">Sin datos</option><option value="Baja">Baja (0–49 %)</option><option value="Media">Media (50–79 %)</option><option value="Alta">Alta (80–100 %)</option></select>
           </div>
         </CardHeader>
         <CardContent>
-          {loading ? <p className="py-10 text-center text-sm text-muted-foreground">Cargando condominios...</p> : !db ? <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">Firebase aún no está conectado.</p> : filteredProperties.length === 0 ? <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No hay condominios que coincidan con los filtros.</p> : <><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{paginatedProperties.map((property) => (
-            <article key={property.id} className="rounded-xl border p-4 transition-shadow hover:shadow-md">
-              <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-2"><span className="rounded-lg bg-primary/10 p-2 text-primary"><Building2 size={18} /></span><div><h2 className="font-semibold">{property.condominiumName || "Sin nombre"}</h2><p className="text-xs text-muted-foreground">{property.condominiumId ? `ID: ${property.condominiumId} · ` : ""}Administrador: {property.administrator || "Sin asignar"}</p></div></div><span className={`rounded-full px-2 py-1 text-xs font-medium ${statusBadgeClass(property.status)}`}>{property.status}</span></div>
-              <div className="mt-4 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2"><p className="text-xs font-medium uppercase tracking-wide text-primary">Ocupación</p><p className="mt-1 text-2xl font-bold text-primary">{formatOccupancy(property.occupancyPercentage)}</p><p className="text-xs text-muted-foreground">{property.occupiedNaps} de {property.totalNaps} NAP ocupados</p></div>
+          {loading ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{Array.from({ length: 6 }, (_, index) => <div key={index} className="rounded-xl border p-4"><div className="flex items-center gap-2"><span className="apple-skeleton h-9 w-9 rounded-lg" /><div className="space-y-2"><div className="apple-skeleton h-4 w-36 rounded" /><div className="apple-skeleton h-3 w-52 rounded" /></div></div><div className="apple-skeleton mt-5 h-24 rounded-lg" /><div className="mt-4 grid grid-cols-2 gap-2"><div className="apple-skeleton h-10 rounded" /><div className="apple-skeleton h-10 rounded" /><div className="apple-skeleton h-10 rounded" /><div className="apple-skeleton h-10 rounded" /></div></div>)}</div> : !db ? <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">Firebase aún no está conectado.</p> : filteredProperties.length === 0 ? <p className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No hay condominios que coincidan con los filtros.</p> : <><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{paginatedProperties.map((property, index) => (
+            <article key={property.id} className="apple-property-card rounded-xl border p-4" style={{ animationDelay: `${Math.min(index * 45, 220)}ms` }}>
+              <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-2"><span className="rounded-lg bg-primary/10 p-2 text-primary"><Building2 size={18} /></span><div><h2 className="font-semibold">{property.condominiumName || "Sin nombre"}</h2><p className="text-xs text-muted-foreground">Administrador: {property.administrator || "Sin asignar"}</p>{property.administratorPhone && <p className="text-xs text-muted-foreground">Contacto: {property.administratorPhone}</p>}{property.administratorEmail && <a href={`mailto:${property.administratorEmail}`} className="inline-flex items-center gap-1 text-xs text-primary hover:underline"><Mail size={12} />{property.administratorEmail}</a>}</div></div><span className={`rounded-full px-2 py-1 text-xs font-medium ${statusBadgeClass(property.status)}`}>{property.status}</span></div>
+              {property.condominiumId && <div className="mt-3 flex items-center justify-between gap-2 rounded-md bg-muted/50 px-3 py-2 text-xs"><span className="truncate text-muted-foreground">ID: <strong className="text-foreground">{property.condominiumId}</strong></span><Button type="button" variant="ghost" size="sm" onClick={() => void copyCondominiumId(property)} aria-label={`Copiar ID de ${property.condominiumName}`} className="h-7 shrink-0 px-2">{copiedPropertyId === property.id ? "Copiado" : <><Copy size={14} className="mr-1" /> Copiar</>}</Button></div>}
+              <div className="mt-4 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2"><div className="flex items-center justify-between gap-2"><p className="text-xs font-medium uppercase tracking-wide text-primary">Ocupación</p><span className="text-xs font-medium text-muted-foreground">{occupancyBand(property.occupancyPercentage)}</span></div><p className="mt-1 text-2xl font-bold text-primary">{formatOccupancy(property.occupancyPercentage)}</p><div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200" role="progressbar" aria-label="Porcentaje de ocupación" aria-valuemin={0} aria-valuemax={100} aria-valuenow={property.occupancyPercentage ?? 0}><div className={`h-full rounded-full transition-[width] ${occupancyBarClass(property.occupancyPercentage)}`} style={{ width: `${Math.min(100, Math.max(0, property.occupancyPercentage ?? 0))}%` }} /></div><p className="mt-2 text-xs text-muted-foreground">{property.occupiedNaps} de {property.totalNaps} NAP ocupados</p></div>
               <div className="mt-4 grid grid-cols-2 gap-2 text-sm"><div><p className="text-muted-foreground">Servicios activos</p><p className="font-semibold">{property.activeServices}</p></div><div><p className="text-muted-foreground">Casas construidas</p><p className="font-semibold">{property.builtHouses}</p></div><div><p className="text-muted-foreground">NAP</p><p className="font-semibold">{property.nap || "—"}</p></div><div><p className="text-muted-foreground">Operadores</p><p className="font-semibold">{property.activeOperators}</p></div></div>
               {property.activeOperatorNames.length > 0 && <p className="mt-3 text-xs text-muted-foreground">Operadores activos: {property.activeOperatorNames.join(", ")}</p>}
+              {pendingPropertyDetails(property).length > 0 && <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">Pendiente: {pendingPropertyDetails(property).join(", ")}.</p>}
               <p className="mt-4 border-t pt-3 text-xs text-muted-foreground">Última actualización: {property.updatedByName || property.createdByName || "Usuario sin nombre disponible"}</p>
               <div className="mt-4 flex justify-between gap-2"><Button variant="outline" size="sm" onClick={() => setSelected(property)}><Eye size={15} className="mr-1" /> Bitácora</Button>{canUpdate && (role !== "AGENTE" || property.createdBy === user?.uid) && <><Button variant="ghost" size="icon" onClick={() => openEdit(property)} aria-label={`Editar ${property.condominiumName}`}><Edit3 size={16} /></Button><Button variant="ghost" size="icon" onClick={() => void toggleStatus(property)} aria-label="Cambiar estado">{property.status === "Activa" ? <ToggleRight size={20} className="text-[#4e8e5b]" /> : <ToggleLeft size={20} className="text-[#858c86]" />}</Button></>}</div>
             </article>
@@ -786,7 +854,7 @@ export default function PropiedadesPage() {
         </CardContent>
       </Card>
 
-      {selected && <Card><CardHeader className="flex-row items-center justify-between"><div><CardTitle>Bitácora · {selected.condominiumName || "Condominio"}</CardTitle><p className="mt-1 text-sm text-muted-foreground">Creado por {selected.createdByName || "Usuario sin nombre disponible"}{selected.createdAt && ` · ${new Date(selected.createdAt).toLocaleString("es-CR")}`}</p></div><Button variant="ghost" size="icon" onClick={() => setSelected(null)} aria-label="Cerrar bitácora"><X size={18} /></Button></CardHeader><CardContent><div className="space-y-5">{selected.history.length === 0 ? <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">Este registro no tiene historial todavía.</p> : [...selected.history].sort((a, b) => b.date.localeCompare(a.date)).map((entry) => <div key={entry.id} className="flex gap-3 border-b pb-4 last:border-0"><span className="mt-1 rounded-full bg-primary/10 p-2 text-primary"><Check size={15} /></span><div className="min-w-0 flex-1"><div className="flex flex-col justify-between gap-1 sm:flex-row"><p className="font-semibold">{entry.type === "created" ? "Registro inicial" : "Actualización"}</p><time className="text-xs text-muted-foreground">{new Date(entry.date).toLocaleString("es-CR")}</time></div><p className="mt-1 text-sm">Por {entry.user || "Usuario actual"}</p>{entry.changes.length > 0 && <p className="mt-1 text-xs text-muted-foreground">Cambios: {entry.changes.join(", ")}</p>}{entry.note && <p className="mt-2 text-sm text-muted-foreground">{entry.note}</p>}{entry.observations && <p className="mt-1 text-sm text-muted-foreground">Observaciones: {entry.observations}</p>}</div></div>)}</div></CardContent></Card>}
+      {selected && <Card className="apple-surface"><CardHeader className="flex-row items-center justify-between"><div><CardTitle>Bitácora · {selected.condominiumName || "Condominio"}</CardTitle><p className="mt-1 text-sm text-muted-foreground">Creado por {selected.createdByName || "Usuario sin nombre disponible"}{selected.createdAt && ` · ${new Date(selected.createdAt).toLocaleString("es-CR")}`}</p></div><Button variant="ghost" size="icon" onClick={() => setSelected(null)} aria-label="Cerrar bitácora"><X size={18} /></Button></CardHeader><CardContent><div className="space-y-5">{selected.history.length === 0 ? <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">Este registro no tiene historial todavía.</p> : [...selected.history].sort((a, b) => b.date.localeCompare(a.date)).map((entry) => <div key={entry.id} className="flex gap-3 border-b pb-4 last:border-0"><span className="mt-1 rounded-full bg-primary/10 p-2 text-primary"><Check size={15} /></span><div className="min-w-0 flex-1"><div className="flex flex-col justify-between gap-1 sm:flex-row"><p className="font-semibold">{entry.type === "created" ? "Registro inicial" : "Actualización"}</p><time className="text-xs text-muted-foreground">{new Date(entry.date).toLocaleString("es-CR")}</time></div><p className="mt-1 text-sm">Por {entry.user || "Usuario actual"}</p>{entry.changes.length > 0 && <p className="mt-1 text-xs text-muted-foreground">Cambios: {entry.changes.join(", ")}</p>}{entry.note && <p className="mt-2 text-sm text-muted-foreground">{entry.note}</p>}{entry.observations && <p className="mt-1 text-sm text-muted-foreground">Observaciones: {entry.observations}</p>}</div></div>)}</div></CardContent></Card>}
     </section>
   );
 }
